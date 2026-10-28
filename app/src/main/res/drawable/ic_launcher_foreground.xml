@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Call / CRM Icon -->
+    <path
+        android:fillColor="#008DDA"
+        android:pathData="M54,24 A30,30 0 1,0 84,54 A30,30 0 0,0 54,24 Z M54,76 A22,22 0 1,1 76,54 A22,22 0 0,1 54,76 Z" />
+    <path
+        android:fillColor="#41B06E"
+        android:pathData="M48,42 L64,54 L48,66 Z" />
+</vector>

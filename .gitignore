@@ -1,0 +1,22 @@
+# Built application files
+*.apk
+*.aar
+*.apks
+.gradle/
+/build/
+/app/build/
+
+# Local configuration file (sdk path, etc.)
+local.properties
+
+# JetBrains / Android Studio specific
+.idea/
+*.iml
+.DS_Store
+.kotlin/
+.cls
+
+# Node / Web backend (agar backend bhi isi repo me hai)
+node_modules/
+.env
+npm-debug.log*

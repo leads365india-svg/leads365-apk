@@ -1,0 +1,7 @@
+<resources>
+    <color name="primary_navy">#0B192C</color>
+    <color name="primary_accent">#008DDA</color>
+    <color name="teal_accent">#41B06E</color>
+    <color name="surface_neutral">#F5F7FA</color>
+    <color name="white">#FFFFFF</color>
+</resources>

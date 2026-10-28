@@ -1,0 +1,58 @@
+name: Leads365 Android CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  build-and-test:
+    name: Lint, Unit Tests & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Run Android Lint (Dev & Prod)
+        run: ./gradlew lintDevDebug lintProdDebug --continue
+
+      - name: Run Unit Tests (Dev & Prod)
+        run: ./gradlew testDevDebugUnitTest testProdDebugUnitTest --continue
+
+      - name: Assemble Debug APKs (Dev & Prod)
+        run: ./gradlew assembleDevDebug assembleProdDebug
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+
+      - name: Upload Lint Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: app/build/reports/lint-results*.html
+
+      - name: Upload APKs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apks
+          path: app/build/outputs/apk/
