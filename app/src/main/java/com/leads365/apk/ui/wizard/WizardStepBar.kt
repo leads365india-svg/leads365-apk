@@ -22,9 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.leads365.apk.ui.WizardStep
-import com.leads365.apk.ui.theme.BlueAccent
-import com.leads365.apk.ui.theme.Navy900
-import com.leads365.apk.ui.theme.TealSuccess
+import com.leads365.apk.ui.theme.*
 
 @Composable
 fun WizardStepBar(
@@ -35,13 +33,13 @@ fun WizardStepBar(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        color = Color.White,
+        border = BorderStroke(1.dp, Slate200)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -53,7 +51,7 @@ fun WizardStepBar(
                 StepIndicatorItem(
                     stepNumber = step.stepNumber,
                     title = when (step) {
-                        WizardStep.PERMISSIONS -> "Permissions"
+                        WizardStep.PERMISSIONS -> "Perms"
                         WizardStep.RECORDING_FOLDER -> "Folder"
                         WizardStep.TEST_CALL -> "Test Call"
                         WizardStep.TEST_RESULT -> "Result"
@@ -72,11 +70,11 @@ fun WizardStepBar(
                 if (index < steps.size - 1) {
                     Box(
                         modifier = Modifier
-                            .width(16.dp)
+                            .width(12.dp)
                             .height(2.dp)
                             .background(
-                                if (step.stepNumber < currentStep.stepNumber) TealSuccess
-                                else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                if (step.stepNumber < currentStep.stepNumber) Emerald500
+                                else Slate200
                             )
                     )
                 }
@@ -97,21 +95,21 @@ private fun StepIndicatorItem(
     Column(
         modifier = modifier.clickable(enabled = isCompleted, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         val circleBg = when {
-            isCompleted -> TealSuccess
-            isCurrent -> BlueAccent
-            else -> MaterialTheme.colorScheme.surfaceVariant
+            isCompleted -> Emerald600
+            isCurrent -> Blue600
+            else -> Slate100
         }
         val circleTextColor = when {
             isCompleted || isCurrent -> Color.White
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
+            else -> Slate500
         }
 
         Box(
             modifier = Modifier
-                .size(26.dp)
+                .size(24.dp)
                 .clip(CircleShape)
                 .background(circleBg),
             contentAlignment = Alignment.Center
@@ -121,14 +119,14 @@ private fun StepIndicatorItem(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             } else {
                 Text(
                     text = stepNumber.toString(),
                     color = circleTextColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
             }
         }
@@ -137,9 +135,10 @@ private fun StepIndicatorItem(
             text = title,
             fontSize = 10.sp,
             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-            color = if (isCurrent) Navy900 else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (isCurrent) Slate900 else Slate500,
             textAlign = TextAlign.Center,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

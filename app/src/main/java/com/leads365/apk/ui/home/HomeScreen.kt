@@ -13,7 +13,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallMissed
 import androidx.compose.material.icons.automirrored.filled.CallReceived
+import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.PhoneCallback
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -93,13 +95,14 @@ fun HomeScreen(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                color = BlueAccent.copy(alpha = 0.12f),
+                                color = Blue50,
                                 shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Blue100),
                                 modifier = Modifier.padding(end = 8.dp)
                             ) {
                                 Text(
                                     text = "LEADS365",
-                                    color = BlueAccent,
+                                    color = Blue600,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -108,14 +111,14 @@ fun HomeScreen(
                             Text(
                                 text = "Home Dashboard",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp,
-                                color = Navy900
+                                fontSize = 16.sp,
+                                color = Slate900
                             )
                         }
                         Text(
                             text = "$agentName • $agencyName",
                             fontSize = 11.sp,
-                            color = TextSecondaryLight
+                            color = Slate500
                         )
                     }
                 },
@@ -126,7 +129,7 @@ fun HomeScreen(
                                 .size(20.dp)
                                 .padding(end = 8.dp),
                             strokeWidth = 2.dp,
-                            color = BlueAccent
+                            color = Blue600
                         )
                     } else {
                         IconButton(
@@ -136,7 +139,7 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Sync",
-                                tint = Navy900
+                                tint = Slate600
                             )
                         }
                     }
@@ -148,11 +151,14 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Default.Person,
                             contentDescription = "Account",
-                            tint = Navy900
+                            tint = Slate600
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = Slate900
+                )
             )
         }
     ) { innerPadding ->
@@ -251,7 +257,7 @@ fun HomeScreen(
             }
 
             // 2. Operational Metrics Overview (Compact 2x2 Grid)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -260,7 +266,7 @@ fun HomeScreen(
                         title = "Assigned Leads",
                         value = "$leadsCount",
                         icon = Icons.AutoMirrored.Filled.List,
-                        accentColor = BlueAccent,
+                        accentColor = Blue600,
                         onClick = onNavigateToLeads,
                         modifier = Modifier.weight(1f)
                     )
@@ -269,7 +275,7 @@ fun HomeScreen(
                         title = "Calls Captured",
                         value = "$totalCallsCount",
                         icon = Icons.Default.Call,
-                        accentColor = Navy900,
+                        accentColor = Emerald600,
                         onClick = onNavigateToCalls,
                         modifier = Modifier.weight(1f)
                     )
@@ -285,7 +291,7 @@ fun HomeScreen(
                         title = "Recordings Found",
                         value = "$displayRecCount",
                         icon = Icons.Default.Mic,
-                        accentColor = TealSuccess,
+                        accentColor = Indigo600,
                         onClick = onNavigateToCalls,
                         modifier = Modifier.weight(1f)
                     )
@@ -294,7 +300,7 @@ fun HomeScreen(
                         title = "Upload Pipeline",
                         value = if (pendingUploadsCount > 0) "$completedUploadsCount ($pendingUploadsCount pend.)" else "$completedUploadsCount",
                         icon = Icons.Default.CloudUpload,
-                        accentColor = if (pendingUploadsCount > 0) Color(0xFFD97706) else TealSuccess,
+                        accentColor = Purple600,
                         onClick = onNavigateToUploads,
                         modifier = Modifier.weight(1f)
                     )
@@ -304,41 +310,41 @@ fun HomeScreen(
             // 3. Quick Navigation Hub
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = LightSurface),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, Slate200)
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     QuickActionRow(
-                        icon = Icons.Default.EventNote,
+                        icon = Icons.AutoMirrored.Filled.EventNote,
                         title = "Follow-ups & Reminders",
                         onClick = onNavigateToFollowUps
                     )
-                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    HorizontalDivider(color = Slate100)
                     QuickActionRow(
                         icon = Icons.Default.Call,
                         title = "Calls & Recordings",
                         onClick = onNavigateToCalls
                     )
-                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    HorizontalDivider(color = Slate100)
                     QuickActionRow(
                         icon = Icons.AutoMirrored.Filled.List,
                         title = "My Leads Directory",
                         onClick = onNavigateToLeads
                     )
-                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    HorizontalDivider(color = Slate100)
                     QuickActionRow(
                         icon = Icons.Default.CloudUpload,
                         title = "Recording Upload Pipeline",
                         onClick = onNavigateToUploads
                     )
-                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    HorizontalDivider(color = Slate100)
                     QuickActionRow(
                         icon = Icons.Default.Build,
                         title = "Device Setup & Recording Wizard",
                         onClick = onNavigateToSetup
                     )
-                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    HorizontalDivider(color = Slate100)
                     QuickActionRow(
                         icon = Icons.Default.Settings,
                         title = "Settings & Diagnostics",
@@ -387,7 +393,7 @@ fun HomeScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.PhoneCallback,
+                                imageVector = Icons.AutoMirrored.Filled.PhoneCallback,
                                 contentDescription = null,
                                 tint = TextTertiaryLight,
                                 modifier = Modifier.size(28.dp)
@@ -442,50 +448,52 @@ private fun MetricCard(
     Card(
         modifier = modifier
             .clickable(onClick = onClick)
-            .heightIn(min = 68.dp),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = LightSurface),
+            .heightIn(min = 72.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, Slate200)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
                     text = title,
                     fontSize = 11.sp,
-                    color = TextSecondaryLight,
-                    fontWeight = FontWeight.Medium
+                    color = Slate500,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .background(accentColor.copy(alpha = 0.12f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.size(13.dp)
-                    )
-                }
+                Text(
+                    text = value,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Slate900
+                )
             }
-
-            Text(
-                text = value,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Navy900
-            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(accentColor.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -501,7 +509,7 @@ private fun QuickActionRow(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .heightIn(min = 48.dp)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -511,30 +519,30 @@ private fun QuickActionRow(
         ) {
             Box(
                 modifier = Modifier
-                    .size(30.dp)
-                    .background(BlueAccent.copy(alpha = 0.10f), CircleShape),
+                    .size(32.dp)
+                    .background(Blue50, RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = BlueAccent,
+                    tint = Blue600,
                     modifier = Modifier.size(16.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = title,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                color = Navy900
+                fontSize = 12.5.sp,
+                color = Slate900
             )
         }
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
             contentDescription = null,
-            tint = TextTertiaryLight,
-            modifier = Modifier.size(16.dp)
+            tint = Slate400,
+            modifier = Modifier.size(14.dp)
         )
     }
 }

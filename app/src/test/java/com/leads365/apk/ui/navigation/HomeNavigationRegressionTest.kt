@@ -7,8 +7,7 @@ import androidx.navigation.compose.ComposeNavigator
 import androidx.navigation.compose.composable
 import androidx.navigation.createGraph
 import androidx.test.core.app.ApplicationProvider
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -157,5 +156,60 @@ class HomeNavigationRegressionTest {
 
         simulateBottomBarClick(NavDestination.Home)
         assertEquals(NavDestination.Home.route, navController.currentDestination?.route)
+    }
+
+    @Test
+    fun `Single tap Enter Test Mode navigates from Login to Home without bounce-back`() {
+        assertEquals(NavDestination.Login.route, navController.currentDestination?.route)
+
+        // Simulate single deliberate tap on Enter Test Mode
+        navController.navigate(NavDestination.Home.route) {
+            popUpTo(NavDestination.Login.route) { inclusive = true }
+            launchSingleTop = true
+        }
+
+        // Must directly settle on Home on the first tap
+        assertEquals(NavDestination.Home.route, navController.currentDestination?.route)
+    }
+
+    @Test
+    fun `Repeated test mode taps do not duplicate navigation entries or crash`() {
+        assertEquals(NavDestination.Login.route, navController.currentDestination?.route)
+
+        // Tap 1
+        navController.navigate(NavDestination.Home.route) {
+            popUpTo(NavDestination.Login.route) { inclusive = true }
+            launchSingleTop = true
+        }
+        assertEquals(NavDestination.Home.route, navController.currentDestination?.route)
+
+        // Tap 2 (rapid second tap simulation)
+        navController.navigate(NavDestination.Home.route) {
+            popUpTo(NavDestination.Login.route) { inclusive = true }
+            launchSingleTop = true
+        }
+        assertEquals(NavDestination.Home.route, navController.currentDestination?.route)
+
+        // Ensure backstack contains Home and popping exits to start (no duplicate Home layers)
+        val popped = navController.popBackStack()
+        // Since Login was popped inclusively, popping Home reaches graph root
+        assertFalse("Popping Home should not find another Home or Login on backstack", popped)
+    }
+
+    @Test
+    fun `Sign In click from Test Mode Banner resets navigation to Login`() {
+        // Start in Home (via test mode)
+        navController.navigate(NavDestination.Home.route) {
+            popUpTo(NavDestination.Login.route) { inclusive = true }
+            launchSingleTop = true
+        }
+        assertEquals(NavDestination.Home.route, navController.currentDestination?.route)
+
+        // Tap "Sign In" in test mode banner
+        navController.navigate(NavDestination.Login.route) {
+            popUpTo(0) { inclusive = true }
+            launchSingleTop = true
+        }
+        assertEquals(NavDestination.Login.route, navController.currentDestination?.route)
     }
 }

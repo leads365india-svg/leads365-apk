@@ -59,13 +59,15 @@ fun CallsScreen(
                         Text(
                             text = "Call History & Recordings",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Navy900
+                            fontSize = 17.sp,
+                            color = Slate900
                         )
+                        val callLabel = if (allCount == 1) "1 call captured" else "$allCount calls captured"
+                        val recLabel = if (recordingsCount == 1) "1 recording" else "$recordingsCount recordings"
                         Text(
-                            text = "$allCount calls captured • $recordingsCount recordings",
+                            text = "$callLabel • $recLabel",
                             fontSize = 11.sp,
-                            color = TextSecondaryLight
+                            color = Slate500
                         )
                     }
                 },
@@ -78,7 +80,7 @@ fun CallsScreen(
                             badge = {
                                 if (recordingsCount > 0) {
                                     Badge(
-                                        containerColor = TealSuccess,
+                                        containerColor = Emerald600,
                                         contentColor = Color.White
                                     ) {
                                         Text("$recordingsCount")
@@ -89,12 +91,15 @@ fun CallsScreen(
                             Icon(
                                 imageVector = Icons.Default.CloudUpload,
                                 contentDescription = "Upload Pipeline",
-                                tint = BlueAccent
+                                tint = Blue600
                             )
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = Slate900
+                )
             )
         }
     ) { paddingValues ->
@@ -263,81 +268,94 @@ fun DiscoveredRecordingCandidateCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = LightSurface),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, Slate200)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = statusColor,
-                    modifier = Modifier.size(20.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .background(Blue50, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = null,
+                        tint = statusColor,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = candidate.displayName,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = Navy900,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.5.sp,
+                        color = Slate900,
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = metaText,
-                            fontSize = 11.sp,
-                            color = TextSecondaryLight
-                        )
-                        Surface(
-                            color = statusColor.copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = statusLabel,
-                                color = statusColor,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
-                            )
-                        }
-                    }
+                    Text(
+                        text = metaText,
+                        fontSize = 10.sp,
+                        color = Slate400,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                 }
             }
 
-            if (isReadable) {
-                OutlinedButton(
-                    onClick = onPlay,
-                    modifier = Modifier.heightIn(min = 36.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(
+                    color = if (!isReadable) Red50 else Blue50,
                     shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(1.dp, BlueAccent.copy(alpha = 0.5f))
+                    border = BorderStroke(1.dp, if (!isReadable) Red100 else Blue100)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play Audio",
-                        tint = BlueAccent,
-                        modifier = Modifier.size(16.dp)
+                    Text(
+                        text = statusLabel,
+                        color = statusColor,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Play", fontSize = 11.sp, color = BlueAccent, fontWeight = FontWeight.Bold)
+                }
+
+                if (isReadable) {
+                    Button(
+                        onClick = onPlay,
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Blue600)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play Audio",
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Play", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -556,29 +574,32 @@ fun RecordingSectionCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
                         contentDescription = "Audio Recording",
-                        tint = TealSuccess,
+                        tint = Emerald600,
                         modifier = Modifier.size(18.dp)
                     )
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = fileName,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
-                            color = Navy900,
-                            maxLines = 1
+                            color = Slate900,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         if (fileSizeFormatted.isNotBlank()) {
                             Text(
                                 text = fileSizeFormatted,
                                 fontSize = 10.sp,
-                                color = TextSecondaryLight
+                                color = Slate500
                             )
                         }
                     }

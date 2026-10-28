@@ -1,6 +1,7 @@
 package com.leads365.apk.ui.navigation
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,12 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.PrivacyTip
 import com.leads365.apk.BuildConfig
 import com.leads365.apk.diagnostics.BackgroundHardeningHelper
-import com.leads365.apk.ui.theme.BlueAccent
-import com.leads365.apk.ui.theme.LightSurface
-import com.leads365.apk.ui.theme.Navy900
-import com.leads365.apk.ui.theme.TealSuccess
-import com.leads365.apk.ui.theme.TextSecondaryLight
-import com.leads365.apk.ui.theme.TextTertiaryLight
+import com.leads365.apk.ui.theme.*
 
 
 @Composable
@@ -77,13 +73,17 @@ fun SettingsScreen(
     val isRunning by diagnosticsViewModel.isRunning.collectAsState()
     val authState by authViewModel.authState.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Slate50
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "App Settings & Environment",
             style = MaterialTheme.typography.headlineMedium,
@@ -255,8 +255,10 @@ fun SettingsScreen(
 
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Slate200),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -271,23 +273,26 @@ fun SettingsScreen(
                         Text(
                             text = "Call Routing & Telephony Mode",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Navy900
+                            fontSize = 13.5.sp,
+                            color = Slate900
                         )
                         Text(
                             text = "Choose between local device dialer and cloud bridge fallback",
                             fontSize = 11.sp,
-                            color = TextSecondaryLight
+                            color = Slate500,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
 
+                    Spacer(modifier = Modifier.width(6.dp))
                     Surface(
-                        color = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) Color(0xFFEFF6FF) else Color(0xFFF1F5F9),
+                        color = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) Blue50 else Slate100,
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
                             text = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) "CLOUD" else "NATIVE",
-                            color = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) BlueAccent else Navy900,
+                            color = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) Blue600 else Slate900,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -295,12 +300,13 @@ fun SettingsScreen(
                     }
                 }
 
+                val isNative = selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name
+                val isCloud = selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilterChip(
-                        selected = selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name,
+                    Button(
                         onClick = {
                             selectedCallMode = com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name
                             telephonyPrefs.edit().putString(
@@ -308,10 +314,17 @@ fun SettingsScreen(
                                 com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name
                             ).apply()
                         },
-                        label = { Text("Native Dialer", fontSize = 11.sp) }
-                    )
-                    FilterChip(
-                        selected = selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name,
+                        modifier = Modifier.weight(1f).height(38.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isNative) Blue600 else Slate100,
+                            contentColor = if (isNative) Color.White else Slate700
+                        )
+                    ) {
+                        Text("Native Dialer", fontSize = 11.sp, fontWeight = if (isNative) FontWeight.Bold else FontWeight.Medium)
+                    }
+
+                    Button(
                         onClick = {
                             selectedCallMode = com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name
                             telephonyPrefs.edit().putString(
@@ -319,15 +332,22 @@ fun SettingsScreen(
                                 com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name
                             ).apply()
                         },
-                        label = { Text("Cloud Telephony", fontSize = 11.sp) }
-                    )
+                        modifier = Modifier.weight(1f).height(38.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isCloud) Blue600 else Slate100,
+                            contentColor = if (isCloud) Color.White else Slate700
+                        )
+                    ) {
+                        Text("Cloud Telephony", fontSize = 11.sp, fontWeight = if (isCloud) FontWeight.Bold else FontWeight.Medium)
+                    }
                 }
 
                 if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) {
                     Text(
                         text = "Cloud Telephony bridges your phone to the lead via telecom provider (Exotel/Twilio). Call is recorded at the switch. Enter the phone number you want the service to call first:",
                         fontSize = 11.sp,
-                        color = TextSecondaryLight
+                        color = Slate500
                     )
                     OutlinedTextField(
                         value = agentPhone,
@@ -340,13 +360,14 @@ fun SettingsScreen(
                         },
                         label = { Text("Your Phone Number (e.g. +919876543210)") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp)
                     )
                 } else {
                     Text(
                         text = "Native Dialer mode places calls directly using your SIM card. Audio recordings are discovered locally from device storage via SAF/MediaStore.",
                         fontSize = 11.sp,
-                        color = TextSecondaryLight
+                        color = Slate500
                     )
                 }
             }
@@ -355,8 +376,10 @@ fun SettingsScreen(
         // Phase 11: Diagnostics & Self-Test Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Slate200),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -367,24 +390,28 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Diagnostics & Self-Test",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Navy900
+                            fontSize = 13.5.sp,
+                            color = Slate900
                         )
                         Text(
                             text = "Operational readiness & prerequisite audit",
                             fontSize = 11.sp,
-                            color = TextSecondaryLight
+                            color = Slate500,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
 
+                    Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = { diagnosticsViewModel.runSelfTest() },
                         enabled = !isRunning,
-                        colors = ButtonDefaults.buttonColors(containerColor = BlueAccent),
+                        colors = ButtonDefaults.buttonColors(containerColor = Blue600),
+                        shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         if (isRunning) {
@@ -394,9 +421,9 @@ fun SettingsScreen(
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Testing...", fontSize = 11.sp)
+                            Text("Testing...", fontSize = 11.sp, maxLines = 1, softWrap = false)
                         } else {
-                            Text("Run Self-Test", fontSize = 11.sp)
+                            Text("Run Self-Test", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -410,23 +437,23 @@ fun SettingsScreen(
                     ) {
                         DiagnosticSummaryBadge(
                             label = "${report.passedCount} PASS",
-                            color = TealSuccess,
+                            color = Emerald600,
                             modifier = Modifier.weight(1f)
                         )
                         DiagnosticSummaryBadge(
                             label = "${report.warningCount} WARN",
-                            color = Color(0xFFF59E0B),
+                            color = Amber600,
                             modifier = Modifier.weight(1f)
                         )
                         DiagnosticSummaryBadge(
                             label = "${report.failedCount} FAIL",
-                            color = Color(0xFFEF4444),
+                            color = Red600,
                             modifier = Modifier.weight(1f)
                         )
                         if (report.untestedCount > 0) {
                             DiagnosticSummaryBadge(
                                 label = "${report.untestedCount} UNTESTED",
-                                color = Color(0xFF6B7280),
+                                color = Slate500,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -514,8 +541,10 @@ fun SettingsScreen(
         val assessment = BackgroundHardeningHelper.evaluateBackgroundHardening(context)
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Slate200),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -529,18 +558,23 @@ fun SettingsScreen(
                     Text(
                         text = "Background Execution & Battery",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = Navy900
+                        fontSize = 13.5.sp,
+                        color = Slate900,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Surface(
-                        color = if (isBatteryOptimizationIgnored) TealSuccess.copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(4.dp)
+                        color = if (isBatteryOptimizationIgnored) Emerald50 else Amber50,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, if (isBatteryOptimizationIgnored) Emerald100 else Amber100)
                     ) {
                         Text(
                             text = if (isBatteryOptimizationIgnored) "OPTIMIZATION EXEMPT" else "OPTIMIZATION ACTIVE",
-                            color = if (isBatteryOptimizationIgnored) TealSuccess else Color(0xFFD97706),
-                            fontSize = 10.sp,
+                            color = if (isBatteryOptimizationIgnored) Emerald600 else Amber600,
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -550,7 +584,7 @@ fun SettingsScreen(
                     text = "Device: ${assessment.deviceModel}",
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,
-                    color = Navy900
+                    color = Slate900
                 )
 
                 Text(
@@ -668,6 +702,7 @@ fun SettingsScreen(
         }
     }
 }
+}
 
 @Composable
 private fun DiagnosticSummaryBadge(
@@ -676,17 +711,18 @@ private fun DiagnosticSummaryBadge(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = color.copy(alpha = 0.15f),
-        shape = RoundedCornerShape(4.dp),
+        color = color.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(6.dp),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.25f)),
         modifier = modifier
     ) {
         Text(
             text = label,
             color = color,
-            fontSize = 10.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier
-                .padding(vertical = 4.dp)
+                .padding(vertical = 6.dp)
                 .fillMaxWidth(),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
@@ -700,16 +736,17 @@ private fun DiagnosticItemRow(
     onOpenAppSettings: () -> Unit = {}
 ) {
     val statusColor = when (item.status) {
-        com.leads365.apk.diagnostics.DiagnosticStatus.PASS -> TealSuccess
-        com.leads365.apk.diagnostics.DiagnosticStatus.WARNING -> Color(0xFFF59E0B)
-        com.leads365.apk.diagnostics.DiagnosticStatus.FAIL -> Color(0xFFEF4444)
-        com.leads365.apk.diagnostics.DiagnosticStatus.NOT_TESTED -> Color(0xFF6B7280)
+        com.leads365.apk.diagnostics.DiagnosticStatus.PASS -> Emerald600
+        com.leads365.apk.diagnostics.DiagnosticStatus.WARNING -> Amber600
+        com.leads365.apk.diagnostics.DiagnosticStatus.FAIL -> Red600
+        com.leads365.apk.diagnostics.DiagnosticStatus.NOT_TESTED -> Slate500
     }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        shape = RoundedCornerShape(8.dp),
+        color = Slate50,
+        border = BorderStroke(1.dp, Slate200.copy(alpha = 0.7f))
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
@@ -723,19 +760,20 @@ private fun DiagnosticItemRow(
                 Text(
                     text = item.title,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    color = Navy900
+                    fontSize = 12.sp,
+                    color = Slate900,
+                    modifier = Modifier.weight(1f)
                 )
                 Surface(
-                    color = statusColor.copy(alpha = 0.18f),
-                    shape = RoundedCornerShape(3.dp)
+                    color = statusColor.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
                         text = item.status.name,
                         color = statusColor,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
             }
@@ -743,7 +781,7 @@ private fun DiagnosticItemRow(
             Text(
                 text = item.summary,
                 fontSize = 11.sp,
-                color = TextSecondaryLight,
+                color = Slate500,
                 lineHeight = 15.sp
             )
 

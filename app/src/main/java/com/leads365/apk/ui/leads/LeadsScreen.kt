@@ -3,11 +3,13 @@ package com.leads365.apk.ui.leads
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -53,8 +55,8 @@ fun LeadsScreen(
                         Text(
                             text = "My Leads",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Navy900
+                            fontSize = 17.sp,
+                            color = Slate900
                         )
                         Text(
                             text = if (uiState.lastSyncTimeEpochMs > 0L) {
@@ -65,7 +67,7 @@ fun LeadsScreen(
                                 "Not yet synced"
                             },
                             fontSize = 11.sp,
-                            color = TextSecondaryLight
+                            color = Slate500
                         )
                     }
                 },
@@ -73,22 +75,25 @@ fun LeadsScreen(
                     if (uiState.isSyncing) {
                         CircularProgressIndicator(
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(20.dp)
                                 .padding(end = 8.dp),
                             strokeWidth = 2.dp,
-                            color = BlueAccent
+                            color = Blue600
                         )
                     } else {
                         IconButton(onClick = { viewModel.syncLeads() }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Refresh Leads",
-                                tint = Navy900
+                                tint = Slate600
                             )
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = Slate900
+                )
             )
         }
     ) { paddingValues ->
@@ -102,9 +107,9 @@ fun LeadsScreen(
             // Offline / Sync Status Alert Banner
             if (uiState.isOffline) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFFEF3C7),
-                    border = BorderStroke(1.dp, Color(0xFFFDE68A)),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Amber50,
+                    border = BorderStroke(1.dp, Amber100),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -115,22 +120,22 @@ fun LeadsScreen(
                         Icon(
                             imageVector = Icons.Default.CloudOff,
                             contentDescription = null,
-                            tint = Color(0xFFB45309),
+                            tint = Amber600,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = "Offline Mode: Showing cached leads from device storage.",
                             fontSize = 11.sp,
-                            color = Color(0xFF92400E),
+                            color = Amber600,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
             } else if (uiState.syncErrorMessage != null) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFFEE2E2),
-                    border = BorderStroke(1.dp, Color(0xFFFECACA)),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Red50,
+                    border = BorderStroke(1.dp, Red100),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -141,13 +146,13 @@ fun LeadsScreen(
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = null,
-                            tint = RedDanger,
+                            tint = Red600,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = uiState.syncErrorMessage ?: "",
                             fontSize = 11.sp,
-                            color = RedDanger,
+                            color = Red600,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.weight(1f)
                         )
@@ -155,7 +160,7 @@ fun LeadsScreen(
                             onClick = { viewModel.clearSyncError() },
                             modifier = Modifier.size(18.dp)
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = RedDanger, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Red600, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -166,49 +171,62 @@ fun LeadsScreen(
                 value = uiState.searchQuery,
                 onValueChange = { viewModel.onSearchQueryChanged(it) },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search by name, phone or notes...", fontSize = 13.sp) },
+                placeholder = { Text("Search by name, phone or notes...", fontSize = 12.sp, color = Slate400) },
                 leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondaryLight)
+                    Icon(Icons.Default.Search, contentDescription = null, tint = Slate400, modifier = Modifier.size(18.dp))
                 },
                 trailingIcon = {
                     if (uiState.searchQuery.isNotEmpty()) {
                         IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = TextSecondaryLight)
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Slate400, modifier = Modifier.size(18.dp))
                         }
                     }
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BlueAccent,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    focusedBorderColor = Blue600,
+                    unfocusedBorderColor = Slate200,
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White
                 )
             )
 
-            // Status Filter Chips
+            // Status Filter Chips (Preserve smooth horizontal scrolling, no awkward clipping)
             val statusFilters = listOf("ALL", "New", "Engaged", "Proposal Sent", "Closed-Won", "Closed-Lost")
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 statusFilters.forEach { status ->
                     val isSelected = uiState.selectedStatus.equals(status, ignoreCase = true)
                     FilterChip(
                         selected = isSelected,
                         onClick = { viewModel.onStatusSelected(status) },
+                        shape = RoundedCornerShape(8.dp),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = if (isSelected) Slate900 else Slate200,
+                            selectedBorderColor = Slate900
+                        ),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Slate900,
+                            selectedLabelColor = Color.White,
+                            containerColor = Color.White,
+                            labelColor = Slate600
+                        ),
                         label = {
                             Text(
                                 text = status,
                                 fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
                             )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Navy900,
-                            selectedLabelColor = Color.White
-                        )
+                        }
                     )
                 }
             }
@@ -223,14 +241,22 @@ fun LeadsScreen(
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(horizontal = 24.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PersonSearch,
-                            contentDescription = null,
-                            tint = TextSecondaryLight,
-                            modifier = Modifier.size(48.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(Slate100, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PersonSearch,
+                                contentDescription = null,
+                                tint = Slate400,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                         Text(
                             text = if (uiState.searchQuery.isNotBlank() || uiState.selectedStatus != "ALL") {
                                 "No leads matching current filters"
@@ -239,21 +265,24 @@ fun LeadsScreen(
                             },
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Navy900
+                            color = Slate900
                         )
                         Text(
                             text = "Assigned leads sync automatically from your CRM.",
                             fontSize = 12.sp,
-                            color = TextSecondaryLight
+                            color = Slate500,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Button(
                             onClick = { viewModel.syncLeads() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                            modifier = Modifier.padding(top = 8.dp)
+                            colors = ButtonDefaults.buttonColors(containerColor = Slate900),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(top = 4.dp)
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Sync Now")
+                            Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

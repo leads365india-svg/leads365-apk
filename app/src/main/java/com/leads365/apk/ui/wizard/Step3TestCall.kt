@@ -179,6 +179,7 @@ fun Step3TestCall(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Header Row with Title and Lead Counter Badge
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -190,25 +191,62 @@ fun Step3TestCall(
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                        if (primaryLead != null && testLeads.size > 1) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = BlueAccent.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    text = "${testLeads.size} Active",
+                                    color = BlueAccent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
 
-                        if (primaryLead != null) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (testLeads.size > 1) {
-                                    TextButton(
-                                        onClick = { showSwitchDialog = true },
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text("Switch (${testLeads.size})", fontSize = 11.sp)
-                                    }
-                                }
-                                TextButton(
-                                    onClick = { showAddDialog = true },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                    // Action Controls on Dedicated Row when leads exist
+                    if (primaryLead != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (testLeads.size > 1) {
+                                OutlinedButton(
+                                    onClick = { showSwitchDialog = true },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(34.dp),
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text("Add New", fontSize = 11.sp)
+                                    Text(
+                                        text = "Switch (${testLeads.size})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Button(
+                                onClick = { showAddDialog = true },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(34.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BlueAccent)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Add New",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
                         }
                     }

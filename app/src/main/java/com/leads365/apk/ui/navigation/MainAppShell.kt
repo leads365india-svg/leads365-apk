@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -31,10 +32,7 @@ import com.leads365.apk.ui.calls.CallsScreen
 import com.leads365.apk.ui.home.HomeScreen
 import com.leads365.apk.ui.leads.LeadsScreen
 import com.leads365.apk.ui.privacy.PrivacyScreen
-import com.leads365.apk.ui.theme.AmberWarning
-import com.leads365.apk.ui.theme.BlueAccent
-import com.leads365.apk.ui.theme.Navy900
-import com.leads365.apk.ui.theme.TextSecondaryLight
+import com.leads365.apk.ui.theme.*
 import com.leads365.apk.ui.upload.UploadStatusScreen
 
 @Composable
@@ -69,22 +67,25 @@ fun MainAppShell(
     // Bottom navigation visible whenever user can access app and is not on Login
     val isBottomBarVisible = canAccessApp && currentRoute != NavDestination.Login.route
 
-    // Reactively enforce session state transitions
+    // Reactively enforce session state transitions (single authoritative source of truth)
     LaunchedEffect(authState, isLocalRecordingTestMode) {
-        if (authState is AuthState.Authenticated) {
-            isLocalRecordingTestMode = false
+        val inDevTestMode = isLocalRecordingTestMode && (BuildConfig.FLAVOR == "dev")
+        val canAccess = authState is AuthState.Authenticated || inDevTestMode
+        if (canAccess) {
+            if (authState is AuthState.Authenticated) {
+                isLocalRecordingTestMode = false
+            }
             if (navController.currentDestination?.route == NavDestination.Login.route) {
                 navController.navigate(NavDestination.Home.route) {
                     popUpTo(NavDestination.Login.route) { inclusive = true }
+                    launchSingleTop = true
                 }
             }
         } else {
-            val inDevTestMode = isLocalRecordingTestMode && (BuildConfig.FLAVOR == "dev")
-            if (!inDevTestMode) {
-                if (navController.currentDestination?.route != NavDestination.Login.route) {
-                    navController.navigate(NavDestination.Login.route) {
-                        popUpTo(0) { inclusive = true }
-                    }
+            if (navController.currentDestination?.route != NavDestination.Login.route) {
+                navController.navigate(NavDestination.Login.route) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
                 }
             }
         }
@@ -117,62 +118,77 @@ fun MainAppShell(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = Slate50,
+        contentColor = Slate900,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (isBottomBarVisible) {
-                NavigationBar(
-                    containerColor = Color.White,
-                    contentColor = Navy900
+                Surface(
+                    color = Color.White,
+                    tonalElevation = 0.dp,
+                    border = BorderStroke(1.dp, Slate200),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    NavDestination.items.forEach { destination ->
-                        val isSelected = currentRoute == destination.route
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = {
-                                if (!canAccessApp) return@NavigationBarItem
-                                if (destination == NavDestination.Home) {
-                                    if (currentRoute != NavDestination.Home.route) {
-                                        val popped = navController.popBackStack(NavDestination.Home.route, inclusive = false)
-                                        if (!popped) {
-                                            navController.navigate(NavDestination.Home.route) {
-                                                popUpTo(0) { inclusive = false }
-                                                launchSingleTop = true
+                    NavigationBar(
+                        containerColor = Color.White,
+                        contentColor = Slate900,
+                        tonalElevation = 0.dp,
+                        windowInsets = NavigationBarDefaults.windowInsets,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        NavDestination.items.forEach { destination ->
+                            val isSelected = currentRoute == destination.route
+                            NavigationBarItem(
+                                selected = isSelected,
+                                onClick = {
+                                    if (!canAccessApp) return@NavigationBarItem
+                                    if (destination == NavDestination.Home) {
+                                        if (currentRoute != NavDestination.Home.route) {
+                                            val popped = navController.popBackStack(NavDestination.Home.route, inclusive = false)
+                                            if (!popped) {
+                                                navController.navigate(NavDestination.Home.route) {
+                                                    popUpTo(0) { inclusive = false }
+                                                    launchSingleTop = true
+                                                }
                                             }
+                                        } else {
+                                            navController.popBackStack(NavDestination.Home.route, inclusive = false)
                                         }
                                     } else {
-                                        navController.popBackStack(NavDestination.Home.route, inclusive = false)
-                                    }
-                                } else {
-                                    if (currentRoute != destination.route) {
-                                        navController.navigate(destination.route) {
-                                            popUpTo(NavDestination.Home.route) {
-                                                saveState = true
+                                        if (currentRoute != destination.route) {
+                                            navController.navigate(destination.route) {
+                                                popUpTo(NavDestination.Home.route) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
                                         }
                                     }
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    imageVector = destination.icon,
-                                    contentDescription = destination.title
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = destination.icon,
+                                        contentDescription = destination.title,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = destination.title,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Blue600,
+                                    selectedTextColor = Blue600,
+                                    unselectedIconColor = Slate400,
+                                    unselectedTextColor = Slate500,
+                                    indicatorColor = Blue50
                                 )
-                            },
-                            label = {
-                                Text(
-                                    text = destination.title,
-                                    fontSize = 10.sp
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = BlueAccent,
-                                selectedTextColor = BlueAccent,
-                                unselectedIconColor = TextSecondaryLight,
-                                unselectedTextColor = TextSecondaryLight,
-                                indicatorColor = BlueAccent.copy(alpha = 0.12f)
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -181,19 +197,22 @@ fun MainAppShell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .background(Slate50)
+                .padding(bottom = innerPadding.calculateBottomPadding())
+                .consumeWindowInsets(PaddingValues(bottom = innerPadding.calculateBottomPadding()))
         ) {
             // Dev Local Test Mode Persistent Top Banner
             if (!isAuthenticated && isLocalRecordingTestMode && BuildConfig.FLAVOR == "dev") {
                 Surface(
-                    color = AmberWarning.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.4f)),
+                    color = Amber50,
+                    border = BorderStroke(1.dp, Amber200),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -204,15 +223,17 @@ fun MainAppShell(
                             Icon(
                                 Icons.Default.Build,
                                 contentDescription = null,
-                                tint = AmberWarning,
-                                modifier = Modifier.size(16.dp)
+                                tint = Amber600,
+                                modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Local Recording Test Mode — dialer discovery active",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Navy900
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Amber900,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         TextButton(
@@ -224,7 +245,7 @@ fun MainAppShell(
                             },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Text("Sign In", fontSize = 11.sp, color = BlueAccent, fontWeight = FontWeight.Bold)
+                            Text("Sign In", fontSize = 11.5.sp, color = Blue600, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -233,7 +254,9 @@ fun MainAppShell(
             NavHost(
                 navController = navController,
                 startDestination = startDest,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Slate50)
             ) {
                 composable(NavDestination.Login.route) {
                     LoginScreen(
@@ -243,6 +266,7 @@ fun MainAppShell(
                                 isLocalRecordingTestMode = true
                                 navController.navigate(NavDestination.Home.route) {
                                     popUpTo(NavDestination.Login.route) { inclusive = true }
+                                    launchSingleTop = true
                                 }
                             }
                         }
@@ -250,64 +274,40 @@ fun MainAppShell(
                 }
 
                 composable(NavDestination.Home.route) {
-                    if (!canAccessApp) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(NavDestination.Login.route) { popUpTo(0) { inclusive = true } }
-                        }
-                    } else {
-                        HomeScreen(
-                            onNavigateToLeads = { navController.navigate(NavDestination.Leads.route) },
-                            onNavigateToCalls = { navController.navigate(NavDestination.Calls.route) },
-                            onNavigateToUploads = { navController.navigate(NavDestination.Uploads.route) },
-                            onNavigateToSetup = { navController.navigate(NavDestination.Setup.route) },
-                            onNavigateToSettings = { navController.navigate(NavDestination.Settings.route) },
-                            onNavigateToAccount = { navController.navigate(NavDestination.Account.route) },
-                            onNavigateToPrivacy = { navController.navigate(NavDestination.Privacy.route) },
-                            onNavigateToFollowUps = { navController.navigate(NavDestination.FollowUps.route) }
-                        )
-                    }
+                    HomeScreen(
+                        onNavigateToLeads = { navController.navigate(NavDestination.Leads.route) },
+                        onNavigateToCalls = { navController.navigate(NavDestination.Calls.route) },
+                        onNavigateToUploads = { navController.navigate(NavDestination.Uploads.route) },
+                        onNavigateToSetup = { navController.navigate(NavDestination.Setup.route) },
+                        onNavigateToSettings = { navController.navigate(NavDestination.Settings.route) },
+                        onNavigateToAccount = { navController.navigate(NavDestination.Account.route) },
+                        onNavigateToPrivacy = { navController.navigate(NavDestination.Privacy.route) },
+                        onNavigateToFollowUps = { navController.navigate(NavDestination.FollowUps.route) }
+                    )
                 }
 
                 composable(NavDestination.Leads.route) {
-                    if (!canAccessApp) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(NavDestination.Login.route) { popUpTo(0) { inclusive = true } }
-                        }
-                    } else {
-                        val leadsViewModel: com.leads365.apk.ui.leads.LeadsViewModel = hiltViewModel()
-                        LeadsScreen(viewModel = leadsViewModel)
-                    }
+                    val leadsViewModel: com.leads365.apk.ui.leads.LeadsViewModel = hiltViewModel()
+                    LeadsScreen(viewModel = leadsViewModel)
                 }
 
                 composable(NavDestination.Calls.route) {
-                    if (!canAccessApp) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(NavDestination.Login.route) { popUpTo(0) { inclusive = true } }
+                    CallsScreen(
+                        onNavigateToUploads = {
+                            navController.navigate(NavDestination.Uploads.route)
+                        },
+                        onNavigateToSetup = {
+                            navController.navigate(NavDestination.Setup.route)
                         }
-                    } else {
-                        CallsScreen(
-                            onNavigateToUploads = {
-                                navController.navigate(NavDestination.Uploads.route)
-                            },
-                            onNavigateToSetup = {
-                                navController.navigate(NavDestination.Setup.route)
-                            }
-                        )
-                    }
+                    )
                 }
 
                 composable(NavDestination.Uploads.route) {
-                    if (!canAccessApp) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(NavDestination.Login.route) { popUpTo(0) { inclusive = true } }
+                    UploadStatusScreen(
+                        onNavigateBack = {
+                            navController.popBackStack()
                         }
-                    } else {
-                        UploadStatusScreen(
-                            onNavigateBack = {
-                                navController.popBackStack()
-                            }
-                        )
-                    }
+                    )
                 }
 
                 composable(NavDestination.Privacy.route) {
@@ -321,64 +321,46 @@ fun MainAppShell(
                 }
 
                 composable(NavDestination.Account.route) {
-                    if (!canAccessApp) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(NavDestination.Login.route) { popUpTo(0) { inclusive = true } }
-                        }
-                    } else {
-                        AccountScreen(
-                            viewModel = authViewModel,
-                            onNavigateToLogin = {
-                                navController.navigate(NavDestination.Login.route) {
-                                    popUpTo(0) { inclusive = true }
-                                }
+                    AccountScreen(
+                        viewModel = authViewModel,
+                        onNavigateToLogin = {
+                            navController.navigate(NavDestination.Login.route) {
+                                popUpTo(0) { inclusive = true }
                             }
-                        )
-                    }
+                        }
+                    )
                 }
 
                 composable(NavDestination.Settings.route) {
-                    if (!canAccessApp) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(NavDestination.Login.route) { popUpTo(0) { inclusive = true } }
-                        }
-                    } else {
-                        SettingsScreen(
-                            onRequestPermissions = onRequestPermissions,
-                            onRequestOverlayPermission = onRequestOverlayPermission,
-                            onRequestBatteryOptimization = onRequestBatteryOptimization,
-                            onOpenAppSettings = onOpenAppSettings,
-                            onNavigateToAccount = {
-                                navController.navigate(NavDestination.Account.route)
-                            },
-                            onNavigateToPrivacy = {
-                                navController.navigate(NavDestination.Privacy.route)
-                            },
-                            onNavigateToDeviceSetup = {
-                                navController.navigate(NavDestination.Setup.route)
-                            },
-                            authViewModel = authViewModel
-                        )
-                    }
+                    SettingsScreen(
+                        onRequestPermissions = onRequestPermissions,
+                        onRequestOverlayPermission = onRequestOverlayPermission,
+                        onRequestBatteryOptimization = onRequestBatteryOptimization,
+                        onOpenAppSettings = onOpenAppSettings,
+                        onNavigateToAccount = {
+                            navController.navigate(NavDestination.Account.route)
+                        },
+                        onNavigateToPrivacy = {
+                            navController.navigate(NavDestination.Privacy.route)
+                        },
+                        onNavigateToDeviceSetup = {
+                            navController.navigate(NavDestination.Setup.route)
+                        },
+                        authViewModel = authViewModel
+                    )
                 }
 
                 composable(NavDestination.Setup.route) {
-                    if (!canAccessApp) {
-                        LaunchedEffect(Unit) {
-                            navController.navigate(NavDestination.Login.route) { popUpTo(0) { inclusive = true } }
-                        }
-                    } else {
-                        MainScreen(
-                            viewModel = viewModel,
-                            onRequestPermissions = onRequestPermissions,
-                            onRequestDirectCallPermission = onRequestDirectCallPermission,
-                            onRequestOverlayPermission = onRequestOverlayPermission,
-                            onRequestBatteryOptimization = onRequestBatteryOptimization,
-                            onOpenAppSettings = onOpenAppSettings,
-                            onPickSafFolder = onPickSafFolder,
-                            onNavigateToCalls = { navController.navigate(NavDestination.Calls.route) }
-                        )
-                    }
+                    MainScreen(
+                        viewModel = viewModel,
+                        onRequestPermissions = onRequestPermissions,
+                        onRequestDirectCallPermission = onRequestDirectCallPermission,
+                        onRequestOverlayPermission = onRequestOverlayPermission,
+                        onRequestBatteryOptimization = onRequestBatteryOptimization,
+                        onOpenAppSettings = onOpenAppSettings,
+                        onPickSafFolder = onPickSafFolder,
+                        onNavigateToCalls = { navController.navigate(NavDestination.Calls.route) }
+                    )
                 }
             }
         }

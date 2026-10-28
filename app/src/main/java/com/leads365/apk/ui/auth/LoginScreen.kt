@@ -17,9 +17,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -36,13 +34,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.leads365.apk.ui.theme.BlueAccent
-import com.leads365.apk.ui.theme.LightSurface
-import com.leads365.apk.ui.theme.Navy800
-import com.leads365.apk.ui.theme.Navy900
-import com.leads365.apk.ui.theme.RedDanger
-import com.leads365.apk.ui.theme.TextPrimaryLight
-import com.leads365.apk.ui.theme.TextSecondaryLight
+import com.leads365.apk.ui.theme.*
 
 @Composable
 fun LoginScreen(
@@ -53,64 +45,80 @@ fun LoginScreen(
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    var isEnteringTestMode by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        isEnteringTestMode = false
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(Slate50)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+            .padding(horizontal = 20.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top
+        verticalArrangement = Arrangement.Center
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = LightSurface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            shape = RoundedCornerShape(12.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            border = BorderStroke(1.dp, Slate200),
+            shape = RoundedCornerShape(16.dp)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Header
+                // Header Badge
                 Surface(
-                    color = BlueAccent.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(8.dp)
+                    color = Blue50,
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, Blue100)
                 ) {
                     Text(
                         text = "LEADS365 MOBILE",
-                        color = BlueAccent,
+                        color = Blue600,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
 
-                Text(
-                    text = "Agent Sign In",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy900
-                )
-
-                Text(
-                    text = "Sign in to authenticate your device and access your assigned CRM leads.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondaryLight,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 18.sp
-                )
+                // Heading
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Agent Sign In",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Slate900
+                    )
+                    Text(
+                        text = "Sign in to authenticate your device and access your assigned CRM leads.",
+                        fontSize = 12.sp,
+                        color = Slate500,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 17.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                }
 
                 // Error Message Banner
                 if (!uiState.errorMessage.isNullOrBlank()) {
                     Surface(
-                        color = RedDanger.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(8.dp),
+                        color = Red50,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Red100),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -120,14 +128,14 @@ fun LoginScreen(
                             Icon(
                                 imageVector = Icons.Default.Warning,
                                 contentDescription = "Error",
-                                tint = RedDanger,
-                                modifier = Modifier.size(20.dp)
+                                tint = Red600,
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = uiState.errorMessage ?: "",
-                                color = RedDanger,
-                                fontSize = 12.sp,
+                                color = Red600,
+                                fontSize = 11.5.sp,
                                 lineHeight = 16.sp,
                                 modifier = Modifier.weight(1f)
                             )
@@ -139,12 +147,19 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = uiState.email,
                     onValueChange = { viewModel.onEmailChanged(it) },
-                    label = { Text("Agent Email") },
+                    placeholder = { Text("Agent Email", fontSize = 12.sp, color = Slate400) },
                     leadingIcon = {
-                        Icon(Icons.Default.Email, contentDescription = null, tint = TextSecondaryLight)
+                        Icon(Icons.Default.Email, contentDescription = null, tint = Slate400, modifier = Modifier.size(18.dp))
                     },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Blue600,
+                        unfocusedBorderColor = Slate300,
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    ),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next
@@ -158,21 +173,30 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = uiState.password,
                     onValueChange = { viewModel.onPasswordChanged(it) },
-                    label = { Text("Password") },
+                    placeholder = { Text("Password", fontSize = 12.sp, color = Slate400) },
                     leadingIcon = {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = TextSecondaryLight)
+                        Icon(Icons.Default.Lock, contentDescription = null, tint = Slate400, modifier = Modifier.size(18.dp))
                     },
                     trailingIcon = {
                         IconButton(onClick = { viewModel.togglePasswordVisibility() }) {
                             Icon(
                                 imageVector = if (uiState.isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (uiState.isPasswordVisible) "Hide password" else "Show password"
+                                contentDescription = if (uiState.isPasswordVisible) "Hide password" else "Show password",
+                                tint = Slate400,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     },
                     visualTransformation = if (uiState.isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Blue600,
+                        unfocusedBorderColor = Slate300,
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    ),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done
@@ -195,8 +219,11 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Navy900)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Slate900,
+                        contentColor = Color.White
+                    )
                 ) {
                     if (uiState.isLoading) {
                         CircularProgressIndicator(
@@ -207,7 +234,7 @@ fun LoginScreen(
                     } else {
                         Text(
                             text = "Sign In",
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -216,48 +243,80 @@ fun LoginScreen(
                 // Local Recording Test Mode Bypass (strictly dev flavor only)
                 if (BuildConfig.FLAVOR == "dev") {
                     Surface(
-                        color = BlueAccent.copy(alpha = 0.08f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, BlueAccent.copy(alpha = 0.25f)),
+                        color = Blue50.copy(alpha = 0.7f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Blue100),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 4.dp)
+                            .padding(top = 2.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = "Local Recording Test Mode (Dev Only)",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
-                                color = Navy900
+                                color = Slate900
                             )
                             Text(
                                 text = "Test native recording folder, local call & discovery without CRM login.",
                                 fontSize = 11.sp,
-                                color = TextSecondaryLight,
-                                textAlign = TextAlign.Center
+                                color = Slate600,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 15.sp
                             )
                             Text(
                                 text = "Backend: ${BuildConfig.BASE_URL}",
                                 fontSize = 10.sp,
-                                color = BlueAccent,
+                                color = Blue600,
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Center
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Button(
-                                onClick = onNavigateToSetup,
-                                colors = ButtonDefaults.buttonColors(containerColor = BlueAccent),
-                                shape = RoundedCornerShape(6.dp),
+                                onClick = {
+                                    if (!isEnteringTestMode && !uiState.isLoading) {
+                                        isEnteringTestMode = true
+                                        onNavigateToSetup()
+                                    }
+                                },
+                                enabled = !isEnteringTestMode && !uiState.isLoading,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Blue600,
+                                    disabledContainerColor = Blue600.copy(alpha = 0.65f)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 38.dp)
+                                    .height(44.dp)
                             ) {
-                                Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Enter Local Recording Test Mode →", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                if (isEnteringTestMode) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Entering Test Mode...",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                } else {
+                                    Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Enter Local Recording Test Mode →",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
                             }
                         }
                     }

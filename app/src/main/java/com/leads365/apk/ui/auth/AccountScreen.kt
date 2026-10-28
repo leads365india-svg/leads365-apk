@@ -22,12 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.leads365.apk.BuildConfig
 import com.leads365.apk.data.repository.AuthState
-import com.leads365.apk.ui.theme.BlueAccent
-import com.leads365.apk.ui.theme.LightSurface
-import com.leads365.apk.ui.theme.Navy900
-import com.leads365.apk.ui.theme.RedDanger
-import com.leads365.apk.ui.theme.TealSuccess
-import com.leads365.apk.ui.theme.TextSecondaryLight
+import com.leads365.apk.ui.theme.*
 
 @Composable
 fun AccountScreen(
@@ -38,13 +33,17 @@ fun AccountScreen(
     val uiState by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Slate50
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "Agent & Account",
             style = MaterialTheme.typography.headlineMedium,
@@ -195,6 +194,7 @@ fun AccountScreen(
             }
         )
     }
+}
 }
 
 @Composable
