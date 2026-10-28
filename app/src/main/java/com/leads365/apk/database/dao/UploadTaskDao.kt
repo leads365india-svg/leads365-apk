@@ -46,6 +46,9 @@ interface UploadTaskDao {
     @Query("DELETE FROM upload_tasks WHERE status = 'COMPLETED'")
     suspend fun clearCompleted()
 
+    @Query("DELETE FROM upload_tasks WHERE status IN ('COMPLETED', 'UPLOADED', 'FAILED_PERMANENT', 'SKIPPED_DNR', 'SKIPPED_NOT_LEAD', 'REJECTED_BY_SERVER', 'CANCELLED') AND updatedAtEpochMs < :cutoffTimestampEpochMs")
+    suspend fun deleteExpiredTerminalTasks(cutoffTimestampEpochMs: Long): Int
+
     @Query("SELECT COUNT(*) FROM upload_tasks WHERE status = :status")
     suspend fun countByStatus(status: String): Int
 

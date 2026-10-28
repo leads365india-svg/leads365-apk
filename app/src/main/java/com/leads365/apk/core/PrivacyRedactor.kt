@@ -3,7 +3,7 @@ package com.leads365.apk.core
 object PrivacyRedactor {
 
     private val PHONE_NUMBER_REGEX = Regex("(\\+?\\d{1,4}[\\s-]?)?(\\d{2,4})[\\s-]?(\\d{3,4})[\\s-]?(\\d{2,4})")
-    private val AUTH_HEADER_REGEX = Regex("(?i)(Authorization|Bearer|Token|Key)[:\\s=]+['\"]?([a-zA-Z0-9._\\-~]+)['\"]?")
+    private val AUTH_HEADER_REGEX = Regex("(?i)(Authorization[:\\s]+Bearer[:\\s]+|Authorization[:\\s=]+|Bearer[:\\s]+|Token[:\\s=]+|Key[:\\s=]+)['\"]?([a-zA-Z0-9._\\-~]+)['\"]?")
 
     fun redactPhoneNumber(phone: String?): String {
         if (phone.isNullOrBlank()) return "[EMPTY]"
@@ -33,8 +33,8 @@ object PrivacyRedactor {
     fun redactAuthHeaders(headerValue: String?): String {
         if (headerValue.isNullOrBlank()) return ""
         return AUTH_HEADER_REGEX.replace(headerValue) { match ->
-            val headerName = match.groupValues[1]
-            "$headerName: [REDACTED]"
+            val prefix = match.groupValues[1].trimEnd()
+            "$prefix [REDACTED]"
         }
     }
 

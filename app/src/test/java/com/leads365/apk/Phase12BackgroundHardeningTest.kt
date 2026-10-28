@@ -201,6 +201,11 @@ class Phase12BackgroundHardeningTest {
         assertTrue("Guidance title must not be blank", assessment.guidanceTitle.isNotBlank())
         assertTrue("Actionable guidance must not be blank", assessment.actionableGuidance.isNotBlank())
 
+        assertNotNull("Device model must be present", assessment.deviceModel)
+        assertTrue("Device model must not be blank", assessment.deviceModel.isNotBlank())
+        assertNotNull("Verified status must be present", assessment.verifiedByApp)
+        assertNotNull("Manual action steps must be present", assessment.requiresManualUserAction)
+
         val batteryIntent = BackgroundHardeningHelper.createBatteryOptimizationIntent(context)
         assertNotNull("Battery optimization intent must not be null", batteryIntent)
         assertNotNull("Battery intent action must not be null", batteryIntent.action)
@@ -211,6 +216,89 @@ class Phase12BackgroundHardeningTest {
             appDetailsIntent.action
         )
         assertEquals("package:${context.packageName}", appDetailsIntent.dataString)
+    }
+
+    @Test
+    fun testSafeQueueRetentionPurgesOnlyExpiredTerminalTasks() = runBlocking {
+        val database = androidx.room.Room.inMemoryDatabaseBuilder(
+            context,
+            com.leads365.apk.database.Leads365Database::class.java
+        ).allowMainThreadQueries().build()
+
+        val repo = com.leads365.apk.data.repository.UploadQueueRepositoryImpl(
+            uploadTaskDao = database.uploadTaskDao(),
+            ioDispatcher = kotlinx.coroutines.Dispatchers.Unconfined
+        )
+
+        val now = System.currentTimeMillis()
+        val eightDaysAgo = now - (8 * 24 * 60 * 60 * 1000L)
+        val oneDayAgo = now - (1 * 24 * 60 * 60 * 1000L)
+
+        // Pending upload (8 days old) -> MUST BE PRESERVED
+        repo.enqueueTask(
+            UploadTaskEntity(
+                id = "p1",
+                callId = "c1",
+                localFileUri = "content://rec/1",
+                fileName = "call1.m4a",
+                fileSizeBytes = 1000L,
+                status = UploadTaskEntity.STATUS_PENDING,
+                updatedAtEpochMs = eightDaysAgo
+            )
+        )
+
+        // Retry wait upload (8 days old) -> MUST BE PRESERVED
+        repo.enqueueTask(
+            UploadTaskEntity(
+                id = "r1",
+                callId = "c2",
+                localFileUri = "content://rec/2",
+                fileName = "call2.m4a",
+                fileSizeBytes = 2000L,
+                status = UploadTaskEntity.STATE_RETRY_WAIT,
+                updatedAtEpochMs = eightDaysAgo
+            )
+        )
+
+        // Uploaded task (8 days old) -> MUST BE PURGED
+        repo.enqueueTask(
+            UploadTaskEntity(
+                id = "u1",
+                callId = "c3",
+                localFileUri = "content://rec/3",
+                fileName = "call3.m4a",
+                fileSizeBytes = 3000L,
+                status = UploadTaskEntity.STATE_UPLOADED,
+                updatedAtEpochMs = eightDaysAgo
+            )
+        )
+
+        // Recent uploaded task (1 day old) -> MUST BE PRESERVED
+        repo.enqueueTask(
+            UploadTaskEntity(
+                id = "u2",
+                callId = "c4",
+                localFileUri = "content://rec/4",
+                fileName = "call4.m4a",
+                fileSizeBytes = 4000L,
+                status = UploadTaskEntity.STATE_UPLOADED,
+                updatedAtEpochMs = oneDayAgo
+            )
+        )
+
+        val cleanResult = repo.cleanExpiredTerminalTasks(retentionPeriodMs = 7 * 24 * 60 * 60 * 1000L)
+        assertTrue(cleanResult is AppResult.Success)
+        assertEquals(1, (cleanResult as AppResult.Success).data)
+
+        // Active tasks must remain
+        assertNotNull((repo.getTaskById("p1") as AppResult.Success).data)
+        assertNotNull((repo.getTaskById("r1") as AppResult.Success).data)
+        assertNotNull((repo.getTaskById("u2") as AppResult.Success).data)
+
+        // Expired terminal task must be removed
+        assertNull((repo.getTaskById("u1") as AppResult.Success).data)
+
+        database.close()
     }
 }
 

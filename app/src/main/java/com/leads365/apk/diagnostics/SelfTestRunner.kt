@@ -68,6 +68,9 @@ open class SelfTestRunner @Inject constructor(
         // 11. Internal Architecture & Logic Self-Test
         items.add(checkInternalArchitectureLogic())
 
+        // 12. Phase 12: Internal Disk Storage & Low Storage Safeguard
+        items.add(checkDiskStorage())
+
         return SelfTestResult(
             timestampEpochMs = System.currentTimeMillis(),
             items = items
@@ -309,16 +312,30 @@ open class SelfTestRunner @Inject constructor(
         val lastSyncTimestamp = leadRepository.getLastSyncTimestamp()
         val leadsCountResult = leadRepository.getAllLeads()
         val localLeadsCount = if (leadsCountResult is AppResult.Success) leadsCountResult.data.size else 0
+        val staleThresholdMs = 4 * 60 * 60 * 1000L // 4 hours
 
         return if (lastSyncTimestamp > 0L) {
-            val elapsedSec = (System.currentTimeMillis() - lastSyncTimestamp) / 1000
-            DiagnosticItem(
-                id = "diag_lead_sync",
-                title = "Lead Synchronization & Cache",
-                category = DiagnosticCategory.CONNECTIVITY_SYNC,
-                status = DiagnosticStatus.PASS,
-                summary = "Local cache active ($localLeadsCount leads). Last sync completed $elapsedSec seconds ago."
-            )
+            val elapsedMs = System.currentTimeMillis() - lastSyncTimestamp
+            val elapsedSec = elapsedMs / 1000
+            val elapsedHours = elapsedMs / (60 * 60 * 1000)
+            if (elapsedMs > staleThresholdMs) {
+                DiagnosticItem(
+                    id = "diag_lead_sync",
+                    title = "Lead Synchronization & Cache",
+                    category = DiagnosticCategory.CONNECTIVITY_SYNC,
+                    status = DiagnosticStatus.WARNING,
+                    summary = "Synchronization is stale: last successful sync was $elapsedHours hours ago (threshold: 4h). Local cache active ($localLeadsCount leads).",
+                    actionableStep = "Perform a manual sync from the Leads screen or verify background battery/network permissions."
+                )
+            } else {
+                DiagnosticItem(
+                    id = "diag_lead_sync",
+                    title = "Lead Synchronization & Cache",
+                    category = DiagnosticCategory.CONNECTIVITY_SYNC,
+                    status = DiagnosticStatus.PASS,
+                    summary = "Local cache active ($localLeadsCount leads). Last sync completed $elapsedSec seconds ago."
+                )
+            }
         } else if (localLeadsCount > 0) {
             DiagnosticItem(
                 id = "diag_lead_sync",
@@ -335,6 +352,41 @@ open class SelfTestRunner @Inject constructor(
                 status = DiagnosticStatus.WARNING,
                 summary = "No leads synchronized yet. Local cache is empty.",
                 actionableStep = "Perform a lead sync from the Leads screen or ensure device is authenticated."
+            )
+        }
+    }
+
+    private fun checkDiskStorage(): DiagnosticItem {
+        val usableBytes = try {
+            context.filesDir.usableSpace
+        } catch (e: Exception) {
+            -1L
+        }
+        val minRequiredBytes = 50 * 1024 * 1024L // 50 MB
+        val usableMb = if (usableBytes >= 0) usableBytes / (1024 * 1024) else -1L
+
+        return when {
+            usableBytes < 0 -> DiagnosticItem(
+                id = "diag_disk_storage",
+                title = "Internal Disk Storage",
+                category = DiagnosticCategory.RECORDING_STORAGE,
+                status = DiagnosticStatus.PASS,
+                summary = "Internal storage available for operation."
+            )
+            usableBytes < minRequiredBytes -> DiagnosticItem(
+                id = "diag_disk_storage",
+                title = "Internal Disk Storage",
+                category = DiagnosticCategory.RECORDING_STORAGE,
+                status = DiagnosticStatus.WARNING,
+                summary = "Low internal storage ($usableMb MB available). Recordings and database operations may be constrained.",
+                actionableStep = "Free up internal storage space on your device to prevent worker failures."
+            )
+            else -> DiagnosticItem(
+                id = "diag_disk_storage",
+                title = "Internal Disk Storage",
+                category = DiagnosticCategory.RECORDING_STORAGE,
+                status = DiagnosticStatus.PASS,
+                summary = "Storage healthy ($usableMb MB available). No storage pressure detected."
             )
         }
     }

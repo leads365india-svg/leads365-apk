@@ -8,6 +8,10 @@ import com.leads365.apk.core.RecordingCandidate
 import com.leads365.apk.core.RecordingDiscoveryMethod
 import com.leads365.apk.core.TimeHelpers
 
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+
 data class SafFolderInspection(
     val isAccessible: Boolean,
     val totalFilesCount: Int,
@@ -43,25 +47,56 @@ open class SafRecordingSource(
     }
 ) : RecordingSource {
 
+    private val _folderUpdateEvents = MutableSharedFlow<Unit>(replay = 1, extraBufferCapacity = 5).apply {
+        tryEmit(Unit)
+    }
+    val folderUpdateEvents: SharedFlow<Unit> = _folderUpdateEvents.asSharedFlow()
+
+    fun notifyFolderUpdated() {
+        _folderUpdateEvents.tryEmit(Unit)
+    }
+
     constructor(context: Context, getTreeUri: () -> Uri?) : this(
         context = context,
         getTreeUriString = { getTreeUri()?.toString() }
     )
 
-    val treeUri: Uri?
-        get() = getTreeUriString()?.let {
-            try { Uri.parse(it) } catch (e: Exception) { null }
+    open val treeUri: Uri?
+        get() {
+            val configured = getTreeUriString()?.let {
+                try { Uri.parse(it) } catch (e: Exception) { null }
+            }
+            if (configured != null) return configured
+            // Fallback to active persisted URI permission from Android system
+            return try {
+                context.contentResolver?.persistedUriPermissions
+                    ?.firstOrNull { it.isReadPermission }?.uri
+            } catch (e: Exception) {
+                null
+            }
         }
 
     override val discoveryMethod: RecordingDiscoveryMethod = RecordingDiscoveryMethod.STORAGE_ACCESS_FRAMEWORK
 
     override fun isConfigured(): Boolean {
-        return !getTreeUriString().isNullOrBlank()
+        if (!getTreeUriString().isNullOrBlank()) return true
+        return try {
+            context.contentResolver?.persistedUriPermissions?.any { it.isReadPermission } == true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     override fun isAccessible(): Boolean {
-        val uriStr = getTreeUriString() ?: return false
-        return hasPersistedPermission(uriStr)
+        val uriStr = getTreeUriString()
+        if (!uriStr.isNullOrBlank()) {
+            return hasPersistedPermission(uriStr)
+        }
+        return try {
+            context.contentResolver?.persistedUriPermissions?.any { it.isReadPermission } == true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /**
@@ -69,7 +104,7 @@ open class SafRecordingSource(
      * Recursively traverses subdirectories up to MAX_SEARCH_DEPTH (e.g. Call, Record/Call).
      * Provides clear diagnostics when the folder is empty or dialer recording is inactive.
      */
-    fun inspectFolderContent(): SafFolderInspection {
+    open fun inspectFolderContent(): SafFolderInspection {
         val targetUri = treeUri ?: return SafFolderInspection(
             isAccessible = false,
             totalFilesCount = 0,
@@ -329,7 +364,7 @@ open class SafRecordingSource(
         return candidates
     }
 
-    fun listDiscoveredRecordings(limit: Int = 100): List<RecordingCandidate> {
+    open fun listDiscoveredRecordings(limit: Int = 100): List<RecordingCandidate> {
         val targetUri = treeUri ?: return emptyList()
         if (!isAccessible()) return emptyList()
 
@@ -450,8 +485,19 @@ open class SafRecordingSource(
         const val MAX_SEARCH_DEPTH = 4
 
         fun takePersistablePermissions(context: Context, uri: Uri) {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-            context.contentResolver.takePersistableUriPermission(uri, flags)
+            try {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (e: SecurityException) {
+                try {
+                    val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    context.contentResolver.takePersistableUriPermission(uri, flags)
+                } catch (e2: Exception) {
+                    android.util.Log.w("SafRecordingSource", "Failed to take read persistable permission for $uri: ${e2.message}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("SafRecordingSource", "Failed to take persistable permission for $uri: ${e.message}")
+            }
         }
     }
 }

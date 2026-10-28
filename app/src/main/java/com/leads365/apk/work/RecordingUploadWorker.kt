@@ -20,6 +20,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.leads365.apk.R
 import com.leads365.apk.core.AppResult
+import com.leads365.apk.data.repository.AuthRepository
 import com.leads365.apk.data.repository.CallRepository
 import com.leads365.apk.data.repository.PolicyRepository
 import com.leads365.apk.data.repository.UploadQueueRepository
@@ -46,6 +47,7 @@ class RecordingUploadWorker(
         fun callRepository(): CallRepository
         fun recordingUploadManager(): RecordingUploadManager
         fun policyRepository(): PolicyRepository
+        fun authRepository(): AuthRepository
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -61,6 +63,12 @@ class RecordingUploadWorker(
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to resolve worker dependencies via EntryPoint", e)
+            return@withContext Result.failure()
+        }
+
+        val authRepository = entryPoint.authRepository()
+        if (!authRepository.isLoggedIn()) {
+            Log.w(TAG, "Device session is revoked or unauthenticated. Halting upload task $taskId.")
             return@withContext Result.failure()
         }
 

@@ -6,7 +6,7 @@ import retrofit2.http.Query
 
 interface LeadApiService {
 
-    @GET("api/mobile/v1/leads/sync")
+    @GET("mobile/v1/leads/sync")
     suspend fun syncLeads(
         @Query("since") sinceTimestampEpochMs: Long? = null,
         @Query("limit") limit: Int = 100

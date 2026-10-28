@@ -70,7 +70,7 @@ class Phase6CallingFlowAndDetectionTest {
 
         val contentType = "application/json".toMediaType()
         val retrofit = Retrofit.Builder()
-            .baseUrl(mockWebServer.url("/"))
+            .baseUrl(mockWebServer.url("/api/"))
             .client(OkHttpClient.Builder().build())
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()

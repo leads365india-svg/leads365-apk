@@ -137,6 +137,9 @@ class EncryptedTokenProvider(
             remove(KEY_DEVICE_ID)
             remove(KEY_FCM_TOKEN)
         }
+        try {
+            context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+        } catch (ignored: Exception) {}
     }
 
     companion object {

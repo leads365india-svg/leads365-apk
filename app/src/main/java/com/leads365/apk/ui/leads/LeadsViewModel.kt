@@ -48,14 +48,16 @@ class LeadsViewModel @Inject constructor(
     private val workManagerScheduler: WorkManagerScheduler,
     private val pendingCallManager: PendingCallManager? = null,
     private val callProcessingManager: CallProcessingManager? = null,
-    private val callRepository: CallRepository? = null
+    private val callRepository: CallRepository? = null,
+    private val followUpRepository: com.leads365.apk.data.repository.FollowUpRepository? = null,
+    private val cloudTelephonyManager: com.leads365.apk.telephony.CloudTelephonyManager? = null
 ) : ViewModel() {
 
     // Secondary constructor for tests that supply only repository & scheduler
     constructor(
         leadRepository: LeadRepository,
         workManagerScheduler: WorkManagerScheduler
-    ) : this(leadRepository, workManagerScheduler, null, null, null)
+    ) : this(leadRepository, workManagerScheduler, null, null, null, null, null)
 
     private val _uiState = MutableStateFlow(
         LeadsUiState(lastSyncTimeEpochMs = leadRepository.getLastSyncTimestamp())
@@ -107,14 +109,49 @@ class LeadsViewModel @Inject constructor(
         _uiState.update { it.copy(syncErrorMessage = null) }
     }
 
+    val callMode: com.leads365.apk.telephony.TelephonyCallMode
+        get() = cloudTelephonyManager?.getCallMode() ?: com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER
+
+    val cloudCallState = cloudTelephonyManager?.callState
+        ?: MutableStateFlow(com.leads365.apk.telephony.CloudCallUiState.Idle)
+
+    fun resetCloudCallState() {
+        cloudTelephonyManager?.resetCallState()
+    }
+
     /**
-     * Phase 6 Calling Flow:
-     * - Records intended pending call context for the lead before launching call.
-     * - Opens native dialer (ACTION_DIAL) by default.
-     * - Uses direct calling (ACTION_CALL) only if CALL_PHONE permission is explicitly granted and direct calling preferred.
-     * - Never treats tapping Call as proof of connection.
+     * Phase 6 / Phase 18 Calling Flow:
+     * - In NATIVE_DIALER mode: Records intended pending call and opens native dialer (ACTION_DIAL/CALL).
+     * - In CLOUD_TELEPHONY mode: Dispatches cloud bridge call request through CloudTelephonyManager.
+     *   On server-confirmed initiation, triggers post-call outcome workflow.
+     *   On failure, provides clean fallback path to native dialer.
      */
-    fun initiateCall(lead: LeadEntity, context: Context, preferDirectCall: Boolean = false) {
+    fun initiateCall(
+        lead: LeadEntity,
+        context: Context,
+        preferDirectCall: Boolean = false,
+        forceNativeDialer: Boolean = false
+    ) {
+        val currentMode = if (forceNativeDialer) {
+            com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER
+        } else {
+            cloudTelephonyManager?.getCallMode() ?: com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER
+        }
+
+        if (currentMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY && cloudTelephonyManager != null) {
+            viewModelScope.launch {
+                when (val result = cloudTelephonyManager.initiateCloudCall(lead)) {
+                    is com.leads365.apk.core.AppResult.Success -> {
+                        promptPostCallOutcome(result.data, lead)
+                    }
+                    is com.leads365.apk.core.AppResult.Failure -> {
+                        // Error is surfaced in cloudCallState StateFlow
+                    }
+                }
+            }
+            return
+        }
+
         pendingCallManager?.setPendingCall(lead)
 
         val rawNum = lead.rawNumber.trim()
@@ -173,6 +210,22 @@ class LeadsViewModel @Inject constructor(
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 leadRepository.saveLead(updatedLead)
+
+                // Phase 17: Schedule follow-up record & reminder
+                if (nextFollowUpEpochMs != null) {
+                    try {
+                        followUpRepository?.createFollowUp(
+                            leadId = lead.id,
+                            leadName = lead.name,
+                            leadPhone = lead.normalizedNumber.ifBlank { lead.rawNumber },
+                            title = "Follow-up ($outcome)",
+                            scheduledAtEpochMs = nextFollowUpEpochMs,
+                            notes = notes ?: ""
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("LeadsViewModel", "Error auto-creating follow-up: ${e.message}")
+                    }
+                }
             }
 
             // 3. Attempt network call reporting in background (keeps PENDING if offline)

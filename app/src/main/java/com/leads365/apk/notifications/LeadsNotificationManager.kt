@@ -15,15 +15,19 @@ object LeadsNotificationManager {
 
     const val CHANNEL_ID_LEAD_ASSIGNMENTS = "leads_assignment_channel"
     const val CHANNEL_ID_CALLER_ID = "leads_caller_id_channel"
+    const val CHANNEL_ID_FOLLOW_UP_REMINDERS = "leads_followup_reminder_channel"
 
     const val ACTION_VIEW_LEAD = "com.leads365.apk.ACTION_VIEW_LEAD"
     const val ACTION_VIEW_LEADS_LIST = "com.leads365.apk.ACTION_VIEW_LEADS_LIST"
+    const val ACTION_VIEW_FOLLOW_UPS = "com.leads365.apk.ACTION_VIEW_FOLLOW_UPS"
 
     const val EXTRA_LEAD_ID = "extra_lead_id"
+    const val EXTRA_FOLLOW_UP_ID = "extra_follow_up_id"
     const val EXTRA_DESTINATION = "extra_destination"
 
     private const val NOTIFICATION_ID_CALLER_ID = 2001
     private const val NOTIFICATION_ID_BASE_ASSIGNMENT = 3000
+    private const val NOTIFICATION_ID_BASE_FOLLOW_UP = 4000
 
     /**
      * Initializes Android notification channels (Android 8.0+ / API 26+)
@@ -53,8 +57,20 @@ object LeadsNotificationManager {
                 setShowBadge(false)
             }
 
+            val followUpChannel = NotificationChannel(
+                CHANNEL_ID_FOLLOW_UP_REMINDERS,
+                "Follow-up Reminders",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alarms and reminders for scheduled lead follow-up calls"
+                enableVibration(true)
+                setShowBadge(true)
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
+            }
+
             notificationManager.createNotificationChannel(assignmentChannel)
             notificationManager.createNotificationChannel(callerIdChannel)
+            notificationManager.createNotificationChannel(followUpChannel)
         }
     }
 
@@ -216,6 +232,71 @@ object LeadsNotificationManager {
     fun dismissCallerIdNotification(context: Context) {
         try {
             NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID_CALLER_ID)
+        } catch (ignored: Exception) {}
+    }
+
+    /**
+     * Dispatches a local reminder notification when a follow-up is due.
+     */
+    fun showFollowUpReminderNotification(
+        context: Context,
+        followUpId: String,
+        leadId: String?,
+        leadName: String,
+        leadPhone: String,
+        title: String,
+        notes: String? = null
+    ) {
+        initChannels(context)
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = ACTION_VIEW_FOLLOW_UPS
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_FOLLOW_UP_ID, followUpId)
+            if (!leadId.isNullOrBlank()) {
+                putExtra(EXTRA_LEAD_ID, leadId)
+            }
+            putExtra(EXTRA_DESTINATION, "followups")
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            followUpId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val contentTitle = if (title.isNotBlank()) "Follow-up: $title" else "Follow-up Reminder"
+        val bodyText = if (leadName.isNotBlank()) {
+            "Lead: $leadName • $leadPhone${if (!notes.isNullOrBlank()) " • $notes" else ""}"
+        } else {
+            notes?.takeIf { it.isNotBlank() } ?: "Scheduled follow-up is due now"
+        }
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID_FOLLOW_UP_REMINDERS)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(contentTitle)
+            .setContentText(bodyText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        try {
+            val notificationId = NOTIFICATION_ID_BASE_FOLLOW_UP + Math.abs(followUpId.hashCode() % 1000)
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+        } catch (e: SecurityException) {
+            // Android 13 POST_NOTIFICATIONS permission not granted
+        }
+    }
+
+    fun dismissFollowUpReminderNotification(context: Context, followUpId: String) {
+        try {
+            val notificationId = NOTIFICATION_ID_BASE_FOLLOW_UP + Math.abs(followUpId.hashCode() % 1000)
+            NotificationManagerCompat.from(context).cancel(notificationId)
         } catch (ignored: Exception) {}
     }
 }

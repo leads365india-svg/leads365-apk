@@ -37,6 +37,9 @@ class MainActivity : ComponentActivity() {
     @javax.inject.Inject
     lateinit var fcmRegistrationManager: com.leads365.apk.notifications.FcmRegistrationManager
 
+    @javax.inject.Inject
+    lateinit var safRecordingSource: com.leads365.apk.recordings.SafRecordingSource
+
     private val viewModel: MainViewModel by viewModels()
     private val leadsViewModel: com.leads365.apk.ui.leads.LeadsViewModel by viewModels()
 
@@ -45,6 +48,7 @@ class MainActivity : ComponentActivity() {
     ) { uri ->
         if (uri != null) {
             viewModel.setSafTreeUri(uri)
+            safRecordingSource.notifyFolderUpdated()
         }
     }
 
@@ -112,6 +116,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshState()
+        safRecordingSource.notifyFolderUpdated()
         // If user returns to the app during the test call step, check if a call just completed
         if (viewModel.uiState.value.currentStep == WizardStep.TEST_CALL &&
             viewModel.uiState.value.recentCallEvent == null
@@ -191,6 +196,14 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingNotificationIntent(intent: Intent?) {
         if (intent == null) return
         if (!authRepository.isLoggedIn()) return
+
+        val destination = intent.getStringExtra(com.leads365.apk.notifications.LeadsNotificationManager.EXTRA_DESTINATION)
+            ?: if (intent.action == com.leads365.apk.notifications.LeadsNotificationManager.ACTION_VIEW_FOLLOW_UPS) "followups" else null
+
+        if (!destination.isNullOrBlank()) {
+            viewModel.setPendingDestination(destination)
+        }
+
         val leadId = intent.getStringExtra(com.leads365.apk.notifications.LeadsNotificationManager.EXTRA_LEAD_ID)
         if (!leadId.isNullOrBlank()) {
             lifecycleScope.launch {

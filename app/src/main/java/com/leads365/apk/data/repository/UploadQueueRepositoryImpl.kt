@@ -95,4 +95,14 @@ class UploadQueueRepositoryImpl @Inject constructor(
             AppResult.Failure(AppError.StorageError("Failed to clear completed upload tasks: ${e.message}", e))
         }
     }
+
+    override suspend fun cleanExpiredTerminalTasks(retentionPeriodMs: Long): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            val cutoff = System.currentTimeMillis() - retentionPeriodMs
+            val deletedCount = uploadTaskDao.deleteExpiredTerminalTasks(cutoff)
+            AppResult.Success(deletedCount)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to clean expired terminal upload tasks: ${e.message}", e))
+        }
+    }
 }

@@ -82,6 +82,13 @@ open class WorkManagerScheduler @Inject constructor(
             return 0
         }
 
+        // 0. Clean expired terminal tasks older than 7 days to safely bound queue growth
+        try {
+            repo.cleanExpiredTerminalTasks()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error cleaning expired terminal tasks: ${e.message}")
+        }
+
         var resumedCount = 0
 
         // 1. Recover any tasks stuck in UPLOADING due to process termination / reboot

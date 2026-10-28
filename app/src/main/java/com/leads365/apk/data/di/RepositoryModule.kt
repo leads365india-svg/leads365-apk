@@ -37,5 +37,9 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindPolicyRepository(impl: PolicyRepositoryImpl): PolicyRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFollowUpRepository(impl: com.leads365.apk.data.repository.FollowUpRepositoryImpl): com.leads365.apk.data.repository.FollowUpRepository
 }
 

@@ -9,10 +9,10 @@ import retrofit2.http.POST
 
 interface PolicyApiService {
 
-    @GET("api/mobile/v1/policy")
+    @GET("mobile/v1/policy")
     suspend fun getPolicy(): PolicyResponse
 
-    @POST("api/mobile/v1/policy/pause")
+    @POST("mobile/v1/policy/pause")
     suspend fun setPauseSyncState(
         @Body request: PauseSyncRequest
     ): PauseSyncResponse

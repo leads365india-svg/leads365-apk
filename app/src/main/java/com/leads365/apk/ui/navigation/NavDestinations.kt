@@ -5,6 +5,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
@@ -25,6 +26,7 @@ sealed class NavDestination(
     object Settings : NavDestination("settings", "Settings", Icons.Default.Settings)
     object Account : NavDestination("account", "Account", Icons.Default.Person)
     object Privacy : NavDestination("privacy", "Privacy", Icons.Default.PrivacyTip)
+    object FollowUps : NavDestination("followups", "Follow-ups", Icons.Default.DateRange)
     object Login : NavDestination("login", "Sign In", Icons.Default.Lock)
 
     companion object {

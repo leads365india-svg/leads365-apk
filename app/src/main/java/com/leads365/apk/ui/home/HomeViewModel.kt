@@ -59,19 +59,37 @@ class HomeViewModel @Inject constructor(
     private val _discoveredRecordingsCount = MutableStateFlow(0)
     val discoveredRecordingsCount: StateFlow<Int> = _discoveredRecordingsCount.asStateFlow()
 
+    private val _lastSyncTimestamp = MutableStateFlow(leadRepository.getLastSyncTimestamp())
+    val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
+
+    private val _isSyncStale = MutableStateFlow(false)
+    val isSyncStale: StateFlow<Boolean> = _isSyncStale.asStateFlow()
+
     init {
         refreshReadiness()
+        viewModelScope.launch {
+            safRecordingSource.folderUpdateEvents.collect {
+                refreshReadiness()
+            }
+        }
     }
 
-    fun refreshReadiness() {
+    fun refreshReadiness(dispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO) {
         _isRecordingAccessAvailable.value = safRecordingSource.isAccessible() || mediaStoreRecordingSource.isAccessible()
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        val lastSync = leadRepository.getLastSyncTimestamp()
+        _lastSyncTimestamp.value = lastSync
+        val staleThresholdMs = 4 * 60 * 60 * 1000L // 4 hours
+        _isSyncStale.value = authRepository.isLoggedIn() && (lastSync > 0L && (System.currentTimeMillis() - lastSync) > staleThresholdMs)
+
+        viewModelScope.launch(dispatcher) {
             val count = if (safRecordingSource.isAccessible()) {
-                safRecordingSource.inspectFolderContent()?.audioFilesCount ?: 0
+                val list = safRecordingSource.listDiscoveredRecordings()
+                if (list.isNotEmpty()) list.size else (safRecordingSource.inspectFolderContent()?.audioFilesCount ?: 0)
             } else if (mediaStoreRecordingSource.isAccessible()) {
                 mediaStoreRecordingSource.listDiscoveredRecordings().size
             } else 0
             _discoveredRecordingsCount.value = count
+            _isRecordingAccessAvailable.value = safRecordingSource.isAccessible() || mediaStoreRecordingSource.isAccessible()
         }
     }
 
@@ -82,6 +100,9 @@ class HomeViewModel @Inject constructor(
             try {
                 if (authRepository.isLoggedIn()) {
                     leadRepository.syncLeads()
+                    val newSync = leadRepository.getLastSyncTimestamp()
+                    _lastSyncTimestamp.value = newSync
+                    _isSyncStale.value = false
                     workManagerScheduler.triggerOneTimeHeartbeat()
                 }
             } catch (e: Exception) {

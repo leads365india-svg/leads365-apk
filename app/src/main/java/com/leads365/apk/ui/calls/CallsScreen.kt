@@ -3,6 +3,7 @@ package com.leads365.apk.ui.calls
 import android.provider.CallLog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,6 +46,10 @@ fun CallsScreen(
     val leadCount by viewModel.leadCount.collectAsState()
     val unlinkedCount by viewModel.unlinkedCount.collectAsState()
     val isRecordingAccessAvailable by viewModel.isRecordingAccessAvailable.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshDiscoveredRecordings()
+    }
 
     Scaffold(
         topBar = {
@@ -98,20 +103,21 @@ fun CallsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // 1. Informative warning card if recording folder / MediaStore is not accessible
+            // 1. Compact warning card only when recording folder / MediaStore is not accessible
             if (!isRecordingAccessAvailable) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = AmberWarning.copy(alpha = 0.10f)),
-                    border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.35f))
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clickable { onNavigateToSetup() },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = AmberWarning.copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.40f))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -123,29 +129,17 @@ fun CallsScreen(
                                 imageVector = Icons.Default.Warning,
                                 contentDescription = null,
                                 tint = AmberWarning,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Recording Folder Inactive",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Navy900
-                                )
-                                Text(
-                                    text = "Select your dialer's recording folder in Setup to discover native recordings.",
-                                    fontSize = 11.sp,
-                                    color = TextSecondaryLight
-                                )
-                            }
+                            Text(
+                                text = "Recording folder inactive",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Navy900
+                            )
                         }
-                        TextButton(
-                            onClick = onNavigateToSetup,
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Setup", fontWeight = FontWeight.Bold, color = BlueAccent)
-                        }
+                        Text("Setup →", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BlueAccent)
                     }
                 }
             }
@@ -260,140 +254,90 @@ fun DiscoveredRecordingCandidateCard(
     val candidate = item.candidate ?: return
     val dateStr = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
         .format(Date(candidate.lastModifiedEpochMs))
+    val sizeStr = formatBytes(candidate.sizeBytes)
+    val metaText = if (sizeStr.isNotBlank()) "$dateStr • $sizeStr" else dateStr
 
     val isReadable = candidate.isReadable
     val statusColor = if (!isReadable) RedDanger else BlueAccent
-    val statusLabel = if (!isReadable) "Inaccessible" else "Unmatched Candidate"
+    val statusLabel = if (!isReadable) "Inaccessible" else "Unmatched"
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = LightSurface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, BlueAccent.copy(alpha = 0.25f))
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header: Icon + Filename + Status Badge
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(statusColor.copy(alpha = 0.12f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Audio Recording",
-                            tint = statusColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = statusColor,
+                    modifier = Modifier.size(20.dp)
+                )
 
-                    Column {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = candidate.displayName,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = Navy900,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Text(
-                            text = candidate.displayName,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = Navy900
-                        )
-                        Text(
-                            text = "$dateStr • ${formatBytes(candidate.sizeBytes)}",
+                            text = metaText,
                             fontSize = 11.sp,
                             color = TextSecondaryLight
                         )
+                        Surface(
+                            color = statusColor.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = statusLabel,
+                                color = statusColor,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                            )
+                        }
                     }
-                }
-
-                Surface(
-                    color = statusColor.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(4.dp)
-                ) {
-                    Text(
-                        text = statusLabel,
-                        color = statusColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
                 }
             }
 
-            // Explanatory note
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(6.dp),
-                color = Color.White,
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
-            ) {
-                Column(
-                    modifier = Modifier.padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+            if (isReadable) {
+                OutlinedButton(
+                    onClick = onPlay,
+                    modifier = Modifier.heightIn(min = 36.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, BlueAccent.copy(alpha = 0.5f))
                 ) {
-                    Text(
-                        text = "Discovered in Record/Call folder",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Navy900
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play Audio",
+                        tint = BlueAccent,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Text(
-                        text = if (!isReadable) {
-                            candidate.unreadableReason ?: "Document stream could not be read."
-                        } else {
-                            "Audio file detected on device storage. Awaiting completed call event to match customer contact."
-                        },
-                        fontSize = 10.sp,
-                        color = TextSecondaryLight,
-                        lineHeight = 14.sp
-                    )
-                }
-            }
-
-            // Actions & Privacy Upload Badge
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color(0xFFF1F5F9),
-                    border = BorderStroke(1.dp, Color(0xFFCBD5E1))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = TextSecondaryLight, modifier = Modifier.size(11.dp))
-                        Text("Local Only (Privacy Protected)", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TextSecondaryLight)
-                    }
-                }
-
-                if (isReadable) {
-                    Button(
-                        onClick = onPlay,
-                        colors = ButtonDefaults.buttonColors(containerColor = Navy800),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 36.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Play Audio", fontSize = 11.sp)
-                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Play", fontSize = 11.sp, color = BlueAccent, fontWeight = FontWeight.Bold)
                 }
             }
         }

@@ -18,9 +18,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.content.Context
 import com.leads365.apk.database.dao.CallDao
 import com.leads365.apk.database.dao.LeadDao
 import com.leads365.apk.database.dao.UploadTaskDao
+import dagger.hilt.android.qualifiers.ApplicationContext
 import retrofit2.HttpException
 import java.io.IOException
 import javax.inject.Inject
@@ -33,7 +35,8 @@ class AuthRepositoryImpl(
     private val leadDao: LeadDao? = null,
     private val callDao: CallDao? = null,
     private val uploadTaskDao: UploadTaskDao? = null,
-    private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val context: Context? = null
 ) : AuthRepository {
 
     @Inject
@@ -42,14 +45,16 @@ class AuthRepositoryImpl(
         encryptedTokenProvider: EncryptedTokenProvider,
         leadDao: LeadDao,
         callDao: CallDao,
-        uploadTaskDao: UploadTaskDao
+        uploadTaskDao: UploadTaskDao,
+        @ApplicationContext context: Context
     ) : this(
         authApiService = authApiService,
         encryptedTokenProvider = encryptedTokenProvider,
         leadDao = leadDao,
         callDao = callDao,
         uploadTaskDao = uploadTaskDao,
-        ioDispatcher = Dispatchers.IO
+        ioDispatcher = Dispatchers.IO,
+        context = context
     )
 
     private val _authState = MutableStateFlow<AuthState>(resolveInitialState())
@@ -304,6 +309,11 @@ class AuthRepositoryImpl(
                 } catch (e: Exception) {
                     // Fallback non-blocking
                 }
+                try {
+                    context?.let { ctx ->
+                        androidx.work.WorkManager.getInstance(ctx).cancelAllWork()
+                    }
+                } catch (ignored: Exception) {}
             }
 
             // 4. Clear credentials, device session, and tokens
@@ -320,7 +330,7 @@ class AuthRepositoryImpl(
 
     override fun invalidateSession(reason: String?) {
         try {
-            // Asynchronous non-blocking clear of lead cache and call records
+            // Asynchronous non-blocking clear of lead cache, call records, and queued uploads
             kotlinx.coroutines.CoroutineScope(ioDispatcher).launch {
                 try {
                     leadDao?.clearAll()
@@ -328,8 +338,19 @@ class AuthRepositoryImpl(
                 try {
                     callDao?.clearAll()
                 } catch (ignored: Exception) {}
+                try {
+                    uploadTaskDao?.clearAll()
+                } catch (ignored: Exception) {}
             }
         } catch (ignored: Exception) {}
+
+        // Cancel background upload and sync tasks to prevent lingering network operations
+        try {
+            context?.let { ctx ->
+                androidx.work.WorkManager.getInstance(ctx).cancelAllWork()
+            }
+        } catch (ignored: Exception) {}
+
         encryptedTokenProvider.clearAllSession()
         _authState.value = if (reason != null) AuthState.SessionRevoked(reason) else AuthState.Unauthenticated
     }

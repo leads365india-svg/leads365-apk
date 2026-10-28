@@ -343,6 +343,80 @@ fun LeadsScreen(
             }
         )
     }
+
+    // Phase 18: Cloud Telephony In-Flight / Status Dialog
+    val cloudCallState by viewModel.cloudCallState.collectAsState()
+    when (val state = cloudCallState) {
+        is com.leads365.apk.telephony.CloudCallUiState.Initiating -> {
+            AlertDialog(
+                onDismissRequest = { /* In-flight */ },
+                title = { Text("Initiating Cloud Bridge", fontWeight = FontWeight.Bold) },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = BlueAccent)
+                        Text("Connecting to cloud telephony switch for ${state.leadName}...", fontSize = 13.sp)
+                    }
+                },
+                confirmButton = {}
+            )
+        }
+        is com.leads365.apk.telephony.CloudCallUiState.RingingAgent -> {
+            AlertDialog(
+                onDismissRequest = { viewModel.resetCloudCallState() },
+                title = { Text("Cloud Call Placed", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(state.message, fontSize = 13.sp, color = Navy900)
+                        Text("1. Answer the incoming call on your phone.\n2. You will be automatically bridged to ${state.leadName}.", fontSize = 12.sp, color = TextSecondaryLight)
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { viewModel.resetCloudCallState() }, colors = ButtonDefaults.buttonColors(containerColor = Navy900)) {
+                        Text("Got It")
+                    }
+                }
+            )
+        }
+        is com.leads365.apk.telephony.CloudCallUiState.Error -> {
+            AlertDialog(
+                onDismissRequest = { viewModel.resetCloudCallState() },
+                title = { Text("Cloud Call Unavailable", fontWeight = FontWeight.Bold, color = Color(0xFFDC2626)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(state.message, fontSize = 13.sp, color = Navy900)
+                        if (state.isProviderUnconfigured) {
+                            Text("You can continue calling using your device's native phone dialer.", fontSize = 12.sp, color = TextSecondaryLight)
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (state.isProviderUnconfigured) {
+                        Button(
+                            onClick = {
+                                viewModel.resetCloudCallState()
+                                uiState.selectedLeadForDetail?.let { lead ->
+                                    viewModel.initiateCall(lead, context, forceNativeDialer = true)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = TealSuccess)
+                        ) {
+                            Text("Use Native Dialer")
+                        }
+                    } else {
+                        Button(onClick = { viewModel.resetCloudCallState() }) {
+                            Text("OK")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.resetCloudCallState() }) {
+                        Text("Dismiss")
+                    }
+                }
+            )
+        }
+        else -> {}
+    }
 }
 
 @Composable

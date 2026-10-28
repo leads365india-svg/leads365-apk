@@ -15,4 +15,5 @@ interface UploadQueueRepository {
     suspend fun incrementRetry(id: String, error: String): AppResult<Unit>
     suspend fun deleteTaskById(id: String): AppResult<Unit>
     suspend fun clearCompleted(): AppResult<Unit>
+    suspend fun cleanExpiredTerminalTasks(retentionPeriodMs: Long = 7 * 24 * 60 * 60 * 1000L): AppResult<Int> = AppResult.Success(0)
 }

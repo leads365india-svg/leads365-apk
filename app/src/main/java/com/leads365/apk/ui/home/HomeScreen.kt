@@ -44,6 +44,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToAccount: () -> Unit = {},
     onNavigateToPrivacy: () -> Unit = {},
+    onNavigateToFollowUps: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val authState by viewModel.authState.collectAsState()
@@ -53,6 +54,8 @@ fun HomeScreen(
     val isSyncing by viewModel.isSyncing.collectAsState()
     val isRecordingAccessAvailable by viewModel.isRecordingAccessAvailable.collectAsState()
     val discoveredRecordingsCount by viewModel.discoveredRecordingsCount.collectAsState()
+    val isSyncStale by viewModel.isSyncStale.collectAsState()
+    val lastSyncTimestamp by viewModel.lastSyncTimestamp.collectAsState()
 
     val callsWithRecordingsCount = calls.count { it.hasRecording }
     val totalCallsCount = calls.size
@@ -78,6 +81,10 @@ fun HomeScreen(
     }
 
     val scrollState = rememberScrollState()
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshReadiness()
+    }
 
     Scaffold(
         topBar = {
@@ -157,99 +164,94 @@ fun HomeScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Hardware Recording Readiness Banner
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isRecordingAccessAvailable) TealSuccess.copy(alpha = 0.08f) else AmberWarning.copy(alpha = 0.10f)
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (isRecordingAccessAvailable) TealSuccess.copy(alpha = 0.35f) else AmberWarning.copy(alpha = 0.40f)
-                )
-            ) {
-                Column(
+            // 1. Hardware Recording Readiness Banner (shown only when setup is genuinely required)
+            if (!isRecordingAccessAvailable) {
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .clickable { onNavigateToSetup() },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = AmberWarning.copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.40f))
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Icon(
-                                imageVector = if (isRecordingAccessAvailable) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                imageVector = Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = if (isRecordingAccessAvailable) TealSuccess else AmberWarning,
+                                tint = AmberWarning,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (isRecordingAccessAvailable) "Recording Folder Active" else "Recording Folder Setup Required",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
+                                text = "Recording folder setup required",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = Navy900
                             )
                         }
-
-                        Surface(
-                            color = if (isRecordingAccessAvailable) TealSuccess.copy(alpha = 0.18f) else AmberWarning.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = if (isRecordingAccessAvailable) "DISCOVERY READY" else "ACTION NEEDED",
-                                color = if (isRecordingAccessAvailable) TealSuccess else Color(0xFFD97706),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = if (isRecordingAccessAvailable) {
-                            "Hardware dialer call recordings will be automatically discovered, matched to assigned leads, and queued for upload."
-                        } else {
-                            "Grant access to your device dialer's recording folder (e.g. Recordings/Call or Record/Call) to enable automated call discovery."
-                        },
-                        fontSize = 11.sp,
-                        color = TextSecondaryLight,
-                        lineHeight = 16.sp
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(
-                            onClick = onNavigateToSetup,
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text(
-                                text = if (isRecordingAccessAvailable) "Review Folder Access →" else "Configure Folder Now →",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BlueAccent
-                            )
-                        }
+                        Text("Setup →", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BlueAccent)
                     }
                 }
             }
 
-            // 2. Operational Metrics Overview (4 Stat Cards)
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "OPERATIONAL OVERVIEW",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondaryLight,
-                    letterSpacing = 0.5.sp
-                )
+            // Stale Synchronization Alert Banner
+            if (isSyncStale) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.syncNow() },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = AmberWarning.copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.40f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = AmberWarning,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val elapsedHours = (System.currentTimeMillis() - lastSyncTimestamp) / (60 * 60 * 1000)
+                            Text(
+                                text = "CRM sync delayed (last sync ${elapsedHours}h ago)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Navy900
+                            )
+                        }
+                        Text(
+                            text = if (isSyncing) "Syncing..." else "Sync Now →",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BlueAccent
+                        )
+                    }
+                }
+            }
 
+            // 2. Operational Metrics Overview (Compact 2x2 Grid)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -257,7 +259,6 @@ fun HomeScreen(
                     MetricCard(
                         title = "Assigned Leads",
                         value = "$leadsCount",
-                        subtext = "Active CRM Leads",
                         icon = Icons.AutoMirrored.Filled.List,
                         accentColor = BlueAccent,
                         onClick = onNavigateToLeads,
@@ -267,7 +268,6 @@ fun HomeScreen(
                     MetricCard(
                         title = "Calls Captured",
                         value = "$totalCallsCount",
-                        subtext = "Telephony Events",
                         icon = Icons.Default.Call,
                         accentColor = Navy900,
                         onClick = onNavigateToCalls,
@@ -280,18 +280,10 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     val displayRecCount = if (callsWithRecordingsCount > 0) callsWithRecordingsCount else discoveredRecordingsCount
-                    val recSubtext = if (callsWithRecordingsCount > 0) {
-                        "Audio Files Matched"
-                    } else if (discoveredRecordingsCount > 0) {
-                        "$discoveredRecordingsCount in folder (0 matched)"
-                    } else {
-                        "No Audio Detected"
-                    }
 
                     MetricCard(
                         title = "Recordings Found",
                         value = "$displayRecCount",
-                        subtext = recSubtext,
                         icon = Icons.Default.Mic,
                         accentColor = TealSuccess,
                         onClick = onNavigateToCalls,
@@ -300,8 +292,7 @@ fun HomeScreen(
 
                     MetricCard(
                         title = "Upload Pipeline",
-                        value = "$completedUploadsCount",
-                        subtext = if (pendingUploadsCount > 0) "$pendingUploadsCount pending" else "All sync'd",
+                        value = if (pendingUploadsCount > 0) "$completedUploadsCount ($pendingUploadsCount pend.)" else "$completedUploadsCount",
                         icon = Icons.Default.CloudUpload,
                         accentColor = if (pendingUploadsCount > 0) Color(0xFFD97706) else TealSuccess,
                         onClick = onNavigateToUploads,
@@ -310,70 +301,61 @@ fun HomeScreen(
                 }
             }
 
-            // 3. Quick Navigation Hub (touch target >= 48dp)
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "WORKFLOW HUB",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondaryLight,
-                    letterSpacing = 0.5.sp
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = LightSurface),
-                    border = BorderStroke(1.dp, Color(0xFFE2E8F0))
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        QuickActionRow(
-                            icon = Icons.Default.Call,
-                            title = "Calls & Recording Discovery",
-                            subtitle = "View real calls, audio files, playback & upload statuses",
-                            onClick = onNavigateToCalls
-                        )
-                        HorizontalDivider(color = Color(0xFFF1F5F9))
-                        QuickActionRow(
-                            icon = Icons.AutoMirrored.Filled.List,
-                            title = "My Leads Directory",
-                            subtitle = "Assigned contacts, direct calling & post-call outcome notes",
-                            onClick = onNavigateToLeads
-                        )
-                        HorizontalDivider(color = Color(0xFFF1F5F9))
-                        QuickActionRow(
-                            icon = Icons.Default.CloudUpload,
-                            title = "Recording Upload Pipeline",
-                            subtitle = "Inspect background WorkManager queue, hashes & retry status",
-                            onClick = onNavigateToUploads
-                        )
-                        HorizontalDivider(color = Color(0xFFF1F5F9))
-                        QuickActionRow(
-                            icon = Icons.Default.Build,
-                            title = "Device Setup & Recording Wizard",
-                            subtitle = "Step 1–4 permissions, SAF folder picker & hardware call simulation",
-                            onClick = onNavigateToSetup
-                        )
-                        HorizontalDivider(color = Color(0xFFF1F5F9))
-                        QuickActionRow(
-                            icon = Icons.Default.Settings,
-                            title = "Settings, Diagnostics & Self-Test",
-                            subtitle = "Readiness audit, battery hardening & caller overlay controls",
-                            onClick = onNavigateToSettings
-                        )
-                    }
+            // 3. Quick Navigation Hub
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = LightSurface),
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    QuickActionRow(
+                        icon = Icons.Default.EventNote,
+                        title = "Follow-ups & Reminders",
+                        onClick = onNavigateToFollowUps
+                    )
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    QuickActionRow(
+                        icon = Icons.Default.Call,
+                        title = "Calls & Recordings",
+                        onClick = onNavigateToCalls
+                    )
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    QuickActionRow(
+                        icon = Icons.AutoMirrored.Filled.List,
+                        title = "My Leads Directory",
+                        onClick = onNavigateToLeads
+                    )
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    QuickActionRow(
+                        icon = Icons.Default.CloudUpload,
+                        title = "Recording Upload Pipeline",
+                        onClick = onNavigateToUploads
+                    )
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    QuickActionRow(
+                        icon = Icons.Default.Build,
+                        title = "Device Setup & Recording Wizard",
+                        onClick = onNavigateToSetup
+                    )
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    QuickActionRow(
+                        icon = Icons.Default.Settings,
+                        title = "Settings & Diagnostics",
+                        onClick = onNavigateToSettings
+                    )
                 }
             }
 
             // 4. Recent Calls / Discovered Audio Feed
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "RECENT CAPTURED CALLS",
+                        text = "RECENT ACTIVITY",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextSecondaryLight,
@@ -383,7 +365,7 @@ fun HomeScreen(
                     if (calls.isNotEmpty()) {
                         TextButton(
                             onClick = onNavigateToCalls,
-                            modifier = Modifier.heightIn(min = 48.dp)
+                            modifier = Modifier.heightIn(min = 36.dp)
                         ) {
                             Text("View All (${calls.size}) →", fontSize = 11.sp, color = BlueAccent, fontWeight = FontWeight.Bold)
                         }
@@ -393,41 +375,41 @@ fun HomeScreen(
                 if (calls.isEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(containerColor = LightSurface),
                         border = BorderStroke(1.dp, Color(0xFFE2E8F0))
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(20.dp),
+                                .padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PhoneCallback,
                                 contentDescription = null,
                                 tint = TextTertiaryLight,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             )
                             Text(
                                 text = "No Calls Captured Yet",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 color = Navy900
                             )
                             Text(
-                                text = "When you place or receive phone calls with assigned leads or customer contacts, native dialer calls and audio recordings appear here.",
+                                text = "Native dialer calls with customer contacts will appear here.",
                                 fontSize = 11.sp,
                                 color = TextSecondaryLight,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                lineHeight = 16.sp
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Button(
                                 onClick = onNavigateToSetup,
                                 colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                                 shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.heightIn(min = 48.dp)
+                                modifier = Modifier.heightIn(min = 38.dp)
                             ) {
                                 Text("Run Test Call in Setup", fontSize = 11.sp)
                             }
@@ -435,7 +417,7 @@ fun HomeScreen(
                     }
                 } else {
                     val recentThree = calls.take(3)
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         recentThree.forEach { call ->
                             RecentCallSnippetCard(call = call, onOpenCalls = onNavigateToCalls)
                         }
@@ -452,7 +434,6 @@ fun HomeScreen(
 private fun MetricCard(
     title: String,
     value: String,
-    subtext: String,
     icon: ImageVector,
     accentColor: Color,
     onClick: () -> Unit,
@@ -461,14 +442,16 @@ private fun MetricCard(
     Card(
         modifier = modifier
             .clickable(onClick = onClick)
-            .heightIn(min = 48.dp),
+            .heightIn(min = 68.dp),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = LightSurface),
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
@@ -484,7 +467,7 @@ private fun MetricCard(
                 )
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(22.dp)
                         .background(accentColor.copy(alpha = 0.12f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
@@ -492,22 +475,16 @@ private fun MetricCard(
                         imageVector = icon,
                         contentDescription = null,
                         tint = accentColor,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                 }
             }
 
             Text(
                 text = value,
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = Navy900
-            )
-
-            Text(
-                text = subtext,
-                fontSize = 10.sp,
-                color = TextTertiaryLight
             )
         }
     }
@@ -517,14 +494,13 @@ private fun MetricCard(
 private fun QuickActionRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .heightIn(min = 52.dp)
+            .heightIn(min = 48.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -535,7 +511,7 @@ private fun QuickActionRow(
         ) {
             Box(
                 modifier = Modifier
-                    .size(34.dp)
+                    .size(30.dp)
                     .background(BlueAccent.copy(alpha = 0.10f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -543,23 +519,16 @@ private fun QuickActionRow(
                     imageVector = icon,
                     contentDescription = null,
                     tint = BlueAccent,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = title,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    color = Navy900
-                )
-                Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
-                    color = TextSecondaryLight
-                )
-            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = title,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = Navy900
+            )
         }
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowForward,

@@ -48,9 +48,31 @@ android {
         }
     }
 
+    val keystorePath = (project.findProperty("RELEASE_STORE_FILE") as? String)
+        ?: System.getenv("RELEASE_STORE_FILE")
+    val hasValidReleaseKeystore = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
+
+    if (hasValidReleaseKeystore) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = (project.findProperty("RELEASE_STORE_PASSWORD") as? String)
+                    ?: System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = (project.findProperty("RELEASE_KEY_ALIAS") as? String)
+                    ?: System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = (project.findProperty("RELEASE_KEY_PASSWORD") as? String)
+                    ?: System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            if (hasValidReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -140,6 +162,8 @@ dependencies {
 
     // Security & Encrypted Keystore Storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    implementation("androidx.sqlite:sqlite:2.4.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

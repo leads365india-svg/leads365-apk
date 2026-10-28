@@ -24,6 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -48,6 +51,7 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
 
     Column(
@@ -277,7 +281,16 @@ fun LoginScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = { /* Open download link */ },
+                    onClick = {
+                        try {
+                            val downloadIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://leads365.com/download")).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(downloadIntent)
+                        } catch (e: Exception) {
+                            // Non-fatal fallback
+                        }
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Navy900)
                 ) {
                     Text("Download Update")

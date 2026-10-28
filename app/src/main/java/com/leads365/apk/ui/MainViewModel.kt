@@ -134,8 +134,26 @@ enum class SimulatedCallScenario {
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    application: Application
+    application: Application,
+    private val safRecordingSource: SafRecordingSource,
+    private val mediaStoreRecordingSource: MediaStoreRecordingSource,
+    private val matcher: TargetedRecordingMatcher
 ) : AndroidViewModel(application) {
+
+    constructor(application: Application) : this(
+        application = application,
+        safRecordingSource = SafRecordingSource(
+            application.applicationContext,
+            getTreeUri = {
+                val prefs = application.applicationContext.getSharedPreferences("com.leads365.apk.preferences", Context.MODE_PRIVATE)
+                prefs.getString("key_saf_tree_uri", null)?.let {
+                    try { Uri.parse(it) } catch (e: Exception) { null }
+                }
+            }
+        ),
+        mediaStoreRecordingSource = MediaStoreRecordingSource(application.applicationContext),
+        matcher = TargetedRecordingMatcher(PhoneNumberNormalizer())
+    )
 
     private val context: Context get() = getApplication<Application>().applicationContext
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -143,9 +161,6 @@ class MainViewModel @Inject constructor(
     private val normalizer = PhoneNumberNormalizer()
     private val callGateManager = CallGateManager(normalizer)
     private val callLogReader = CallLogReader(context, normalizer)
-    private val safRecordingSource = SafRecordingSource(context, getTreeUri = { getSavedSafUri() })
-    private val mediaStoreRecordingSource = MediaStoreRecordingSource(context)
-    private val matcher = TargetedRecordingMatcher(normalizer)
     private val uploader = StreamingTestUploader(context)
 
     private val diagnosticsManager = DiagnosticsManager(
@@ -173,6 +188,17 @@ class MainViewModel @Inject constructor(
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    private val _pendingDestination = MutableStateFlow<String?>(null)
+    val pendingDestination: StateFlow<String?> = _pendingDestination.asStateFlow()
+
+    fun setPendingDestination(dest: String?) {
+        _pendingDestination.value = dest
+    }
+
+    fun clearPendingDestination() {
+        _pendingDestination.value = null
+    }
 
     private val wizardCallListener: (CallEvent) -> Unit = { call ->
         handleCallEnded(call, isSimulated = false)
@@ -216,6 +242,14 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             uploader.uploadState.collect { state ->
                 _uiState.update { it.copy(uploadState = state) }
+            }
+        }
+
+        // Observe SAF folder update events reactively
+        viewModelScope.launch {
+            safRecordingSource.folderUpdateEvents.collect {
+                refreshState()
+                verifyFolderAccess()
             }
         }
     }
@@ -379,6 +413,8 @@ class MainViewModel @Inject constructor(
             context.getSharedPreferences("leads365_prefs", Context.MODE_PRIVATE)
                 .edit().putString("saf_tree_uri", uri.toString()).apply()
 
+            safRecordingSource.notifyFolderUpdated()
+
             _uiState.update {
                 it.copy(
                     folderQuerySuccess = null,
@@ -398,6 +434,8 @@ class MainViewModel @Inject constructor(
             .edit().remove(KEY_SAF_URI).apply()
         context.getSharedPreferences("leads365_prefs", Context.MODE_PRIVATE)
             .edit().remove("saf_tree_uri").apply()
+
+        safRecordingSource.notifyFolderUpdated()
 
         _uiState.update {
             it.copy(

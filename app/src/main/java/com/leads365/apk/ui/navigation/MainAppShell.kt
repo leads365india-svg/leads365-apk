@@ -90,6 +90,31 @@ fun MainAppShell(
         }
     }
 
+    // Handle deep-link/notification pending navigation
+    val pendingDestination by viewModel.pendingDestination.collectAsState()
+    LaunchedEffect(pendingDestination, canAccessApp) {
+        val dest = pendingDestination
+        if (dest != null && canAccessApp) {
+            val validRoute = when (dest.lowercase()) {
+                "followups" -> NavDestination.FollowUps.route
+                "leads" -> NavDestination.Leads.route
+                "calls" -> NavDestination.Calls.route
+                "uploads" -> NavDestination.Uploads.route
+                "settings" -> NavDestination.Settings.route
+                else -> null
+            }
+            if (validRoute != null) {
+                navController.navigate(validRoute) {
+                    popUpTo(NavDestination.Home.route) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                }
+            }
+            viewModel.clearPendingDestination()
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
@@ -104,13 +129,27 @@ fun MainAppShell(
                             selected = isSelected,
                             onClick = {
                                 if (!canAccessApp) return@NavigationBarItem
-                                if (currentRoute != destination.route) {
-                                    navController.navigate(destination.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
+                                if (destination == NavDestination.Home) {
+                                    if (currentRoute != NavDestination.Home.route) {
+                                        val popped = navController.popBackStack(NavDestination.Home.route, inclusive = false)
+                                        if (!popped) {
+                                            navController.navigate(NavDestination.Home.route) {
+                                                popUpTo(0) { inclusive = false }
+                                                launchSingleTop = true
+                                            }
                                         }
-                                        launchSingleTop = true
-                                        restoreState = true
+                                    } else {
+                                        navController.popBackStack(NavDestination.Home.route, inclusive = false)
+                                    }
+                                } else {
+                                    if (currentRoute != destination.route) {
+                                        navController.navigate(destination.route) {
+                                            popUpTo(NavDestination.Home.route) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
                                     }
                                 }
                             },
@@ -223,7 +262,8 @@ fun MainAppShell(
                             onNavigateToSetup = { navController.navigate(NavDestination.Setup.route) },
                             onNavigateToSettings = { navController.navigate(NavDestination.Settings.route) },
                             onNavigateToAccount = { navController.navigate(NavDestination.Account.route) },
-                            onNavigateToPrivacy = { navController.navigate(NavDestination.Privacy.route) }
+                            onNavigateToPrivacy = { navController.navigate(NavDestination.Privacy.route) },
+                            onNavigateToFollowUps = { navController.navigate(NavDestination.FollowUps.route) }
                         )
                     }
                 }
@@ -272,6 +312,12 @@ fun MainAppShell(
 
                 composable(NavDestination.Privacy.route) {
                     PrivacyScreen()
+                }
+
+                composable(NavDestination.FollowUps.route) {
+                    com.leads365.apk.ui.followups.FollowUpsScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
                 }
 
                 composable(NavDestination.Account.route) {

@@ -237,6 +237,121 @@ fun SettingsScreen(
             }
         }
 
+        // Phase 18: Telephony Call Mode (Native Dialer vs Cloud Telephony Fallback)
+        val telephonyPrefs = context.getSharedPreferences(com.leads365.apk.telephony.CloudTelephonyManager.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        var selectedCallMode by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf(
+                telephonyPrefs.getString(
+                    com.leads365.apk.telephony.CloudTelephonyManager.KEY_CALL_MODE,
+                    com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name
+                ) ?: com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name
+            )
+        }
+        var agentPhone by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf(
+                telephonyPrefs.getString(com.leads365.apk.telephony.CloudTelephonyManager.KEY_AGENT_PHONE, "") ?: ""
+            )
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = LightSurface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Call Routing & Telephony Mode",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Navy900
+                        )
+                        Text(
+                            text = "Choose between local device dialer and cloud bridge fallback",
+                            fontSize = 11.sp,
+                            color = TextSecondaryLight
+                        )
+                    }
+
+                    Surface(
+                        color = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) Color(0xFFEFF6FF) else Color(0xFFF1F5F9),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) "CLOUD" else "NATIVE",
+                            color = if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) BlueAccent else Navy900,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name,
+                        onClick = {
+                            selectedCallMode = com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name
+                            telephonyPrefs.edit().putString(
+                                com.leads365.apk.telephony.CloudTelephonyManager.KEY_CALL_MODE,
+                                com.leads365.apk.telephony.TelephonyCallMode.NATIVE_DIALER.name
+                            ).apply()
+                        },
+                        label = { Text("Native Dialer", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name,
+                        onClick = {
+                            selectedCallMode = com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name
+                            telephonyPrefs.edit().putString(
+                                com.leads365.apk.telephony.CloudTelephonyManager.KEY_CALL_MODE,
+                                com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name
+                            ).apply()
+                        },
+                        label = { Text("Cloud Telephony", fontSize = 11.sp) }
+                    )
+                }
+
+                if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) {
+                    Text(
+                        text = "Cloud Telephony bridges your phone to the lead via telecom provider (Exotel/Twilio). Call is recorded at the switch. Enter the phone number you want the service to call first:",
+                        fontSize = 11.sp,
+                        color = TextSecondaryLight
+                    )
+                    OutlinedTextField(
+                        value = agentPhone,
+                        onValueChange = {
+                            agentPhone = it
+                            telephonyPrefs.edit().putString(
+                                com.leads365.apk.telephony.CloudTelephonyManager.KEY_AGENT_PHONE,
+                                it.trim()
+                            ).apply()
+                        },
+                        label = { Text("Your Phone Number (e.g. +919876543210)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                } else {
+                    Text(
+                        text = "Native Dialer mode places calls directly using your SIM card. Audio recordings are discovered locally from device storage via SAF/MediaStore.",
+                        fontSize = 11.sp,
+                        color = TextSecondaryLight
+                    )
+                }
+            }
+        }
+
         // Phase 11: Diagnostics & Self-Test Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -432,11 +547,31 @@ fun SettingsScreen(
                 }
 
                 Text(
+                    text = "Device: ${assessment.deviceModel}",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = Navy900
+                )
+
+                Text(
                     text = assessment.actionableGuidance,
                     color = TextSecondaryLight,
                     fontSize = 12.sp,
                     lineHeight = 17.sp
                 )
+
+                Surface(
+                    color = BlueAccent.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Verified status: ${assessment.verifiedByApp}",
+                        fontSize = 11.sp,
+                        color = Navy900,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

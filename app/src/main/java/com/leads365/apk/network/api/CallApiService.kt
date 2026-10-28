@@ -7,7 +7,7 @@ import retrofit2.http.POST
 
 interface CallApiService {
 
-    @POST("api/mobile/v1/calls")
+    @POST("mobile/v1/calls")
     suspend fun reportCall(
         @Body request: CallReportRequest
     ): CallReportResponse

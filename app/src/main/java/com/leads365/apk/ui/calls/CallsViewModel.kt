@@ -75,11 +75,16 @@ class CallsViewModel @Inject constructor(
 
     init {
         refreshDiscoveredRecordings()
+        viewModelScope.launch {
+            safRecordingSource.folderUpdateEvents.collect {
+                refreshDiscoveredRecordings()
+            }
+        }
     }
 
-    fun refreshDiscoveredRecordings() {
+    fun refreshDiscoveredRecordings(dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO) {
         refreshAccessState()
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
             try {
                 val safList = if (safRecordingSource.isAccessible()) {
                     safRecordingSource.listDiscoveredRecordings()
@@ -90,6 +95,7 @@ class CallsViewModel @Inject constructor(
                 } else emptyList()
 
                 _discoveredCandidates.value = (safList + mediaStoreList).distinctBy { it.uriString }
+                refreshAccessState()
             } catch (e: Exception) {
                 Log.w("CallsViewModel", "Error loading discovered recordings: ${e.message}")
             }
@@ -165,12 +171,12 @@ class CallsViewModel @Inject constructor(
         }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = emptyList()
     )
 
     val allCount: StateFlow<Int> = allCallRecords.map { it.size }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     val recordingsCount: StateFlow<Int> = combine(
         allCallRecords,
@@ -184,19 +190,19 @@ class CallsViewModel @Inject constructor(
         } else {
             candidates.size
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     val unlinkedCount: StateFlow<Int> = allCallRecords.map { items -> items.count { it.isUnlinkedInbound } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     val leadCount: StateFlow<Int> = allCallRecords.map { items -> items.count { !it.isUnlinkedInbound } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     // Raw calls list
     val calls: StateFlow<List<CallEntity>> = callRepository.getAllCallsFlow()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.Eagerly,
             initialValue = emptyList()
         )
 
@@ -228,7 +234,12 @@ class CallsViewModel @Inject constructor(
             }
             context.startActivity(intent)
             true
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "No media player app installed to play audio.", android.widget.Toast.LENGTH_SHORT).show()
+            Log.e("CallsViewModel", "No app available to play audio: ${e.message}")
+            false
         } catch (e: Exception) {
+            android.widget.Toast.makeText(context, "Unable to play audio: ${e.message ?: "File unreadable"}", android.widget.Toast.LENGTH_SHORT).show()
             Log.e("CallsViewModel", "Failed to launch native audio player: ${e.message}")
             false
         }
