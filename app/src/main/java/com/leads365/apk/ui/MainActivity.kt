@@ -20,16 +20,13 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     @javax.inject.Inject
-    lateinit var workManagerScheduler: com.leads365.apk.work.WorkManagerScheduler
+    lateinit var workManagerScheduler: dagger.Lazy<com.leads365.apk.work.WorkManagerScheduler>
 
     @javax.inject.Inject
-    lateinit var callProcessingManager: com.leads365.apk.calls.CallProcessingManager
+    lateinit var callProcessingManager: dagger.Lazy<com.leads365.apk.calls.CallProcessingManager>
 
     @javax.inject.Inject
-    lateinit var callerIdentificationManager: com.leads365.apk.calls.CallerIdentificationManager
-
-    @javax.inject.Inject
-    lateinit var leadRepository: com.leads365.apk.data.repository.LeadRepository
+    lateinit var callerIdentificationManager: dagger.Lazy<com.leads365.apk.calls.CallerIdentificationManager>
 
     @javax.inject.Inject
     lateinit var authRepository: com.leads365.apk.data.repository.AuthRepository
@@ -40,8 +37,13 @@ class MainActivity : ComponentActivity() {
     @javax.inject.Inject
     lateinit var safRecordingSource: com.leads365.apk.recordings.SafRecordingSource
 
+    @javax.inject.Inject
+    lateinit var leadRepository: dagger.Lazy<com.leads365.apk.data.repository.LeadRepository>
+
     private val viewModel: MainViewModel by viewModels()
-    private val leadsViewModel: com.leads365.apk.ui.leads.LeadsViewModel by viewModels()
+    private val leadsViewModel: com.leads365.apk.ui.leads.LeadsViewModel by lazy {
+        androidx.lifecycle.ViewModelProvider(this)[com.leads365.apk.ui.leads.LeadsViewModel::class.java]
+    }
 
     private val safPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -59,39 +61,42 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupStartNs = android.os.SystemClock.elapsedRealtimeNanos()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Phase 10: Initialize notification channels and register FCM token
+        // Fast main-thread setup: channels only
         com.leads365.apk.notifications.LeadsNotificationManager.initChannels(this)
-        fcmRegistrationManager.checkAndRegisterToken(applicationContext)
+        val channelsElapsedMs = (android.os.SystemClock.elapsedRealtimeNanos() - startupStartNs) / 1_000_000
 
-        // Phase 5: Schedule periodic sync (15-min) and trigger initial sync on app launch
-        workManagerScheduler.schedulePeriodicLeadSync()
-        workManagerScheduler.triggerOneTimeLeadSync()
+        // Defer non-essential initialization off the main thread to ensure immediate UI presentation
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            fcmRegistrationManager.checkAndRegisterToken(applicationContext)
 
-        // Phase 11: Schedule daily heartbeat (24-hr) and trigger on-app-open telemetry
-        workManagerScheduler.schedulePeriodicHeartbeat()
-        workManagerScheduler.triggerOneTimeHeartbeat()
-
-        // Phase 12: Resume any pending/retryable recording uploads on launch
-        lifecycleScope.launch {
-            try {
-                workManagerScheduler.resumePendingUploads()
-            } catch (e: Exception) {
-                // Non-blocking background recovery
+            // Only schedule and trigger authenticated background workers if logged in
+            if (authRepository.isLoggedIn()) {
+                val scheduler = workManagerScheduler.get()
+                scheduler.schedulePeriodicLeadSync()
+                scheduler.triggerOneTimeLeadSync()
+                scheduler.schedulePeriodicHeartbeat()
+                scheduler.triggerOneTimeHeartbeat()
+                try {
+                    scheduler.resumePendingUploads()
+                } catch (e: Exception) {
+                    // Non-blocking background recovery
+                }
             }
         }
 
-        // Phase 10: Wire CallStateReceiver state transitions for Caller ID overlay/heads-up
+        // Wire CallStateReceiver state transitions for Caller ID overlay/heads-up
         com.leads365.apk.calls.CallStateReceiver.onCallStateChangedListener = { stateStr, number ->
             when (stateStr) {
                 android.telephony.TelephonyManager.EXTRA_STATE_RINGING,
                 android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                    callerIdentificationManager.onCallStarted(applicationContext, number)
+                    callerIdentificationManager.get().onCallStarted(applicationContext, number)
                 }
                 android.telephony.TelephonyManager.EXTRA_STATE_IDLE -> {
-                    callerIdentificationManager.onCallEnded(applicationContext)
+                    callerIdentificationManager.get().onCallEnded(applicationContext)
                 }
             }
         }
@@ -99,6 +104,7 @@ class MainActivity : ComponentActivity() {
         handleIncomingNotificationIntent(intent)
 
         setContent {
+            val compositionStartNs = android.os.SystemClock.elapsedRealtimeNanos()
             Leads365Theme {
                 com.leads365.apk.ui.navigation.MainAppShell(
                     viewModel = viewModel,
@@ -109,6 +115,11 @@ class MainActivity : ComponentActivity() {
                     onOpenAppSettings = { openAppSettings() },
                     onPickSafFolder = { safPickerLauncher.launch(null) }
                 )
+            }
+            androidx.compose.runtime.SideEffect {
+                val compElapsedMs = (android.os.SystemClock.elapsedRealtimeNanos() - compositionStartNs) / 1_000_000
+                val totalStartupMs = (android.os.SystemClock.elapsedRealtimeNanos() - startupStartNs) / 1_000_000
+                android.util.Log.i("Leads365Startup", "First composition complete in ${compElapsedMs}ms (total cold start to first UI frame: ${totalStartupMs}ms, channels: ${channelsElapsedMs}ms)")
             }
         }
     }
@@ -124,21 +135,25 @@ class MainActivity : ComponentActivity() {
             viewModel.checkForRecentCall()
         }
 
-        // Phase 6: Probe for any call that finished while the app was backgrounded
-        val reader = com.leads365.apk.calls.CallLogReader(applicationContext)
-        val recentCall = reader.findMostRecentCall(maxEndRecencyMs = 900_000L)
-        if (recentCall != null) {
-            lifecycleScope.launch {
-                callProcessingManager.processCallEvent(recentCall)
-            }
-        }
-
-        // Phase 12: Resume pending and retryable uploads across app reopening
-        lifecycleScope.launch {
+        // Asynchronously probe CallLog for recent calls matching assigned leads off the main thread
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                workManagerScheduler.resumePendingUploads()
+                val reader = com.leads365.apk.calls.CallLogReader(applicationContext)
+                val recentCalls = reader.queryRecentCallEntries(limit = 20)
+                val processor = callProcessingManager.get()
+                for (call in recentCalls) {
+                    processor.processCallEvent(call)
+                }
             } catch (e: Exception) {
-                // Non-blocking recovery
+                // Non-blocking background scan
+            }
+
+            if (authRepository.isLoggedIn()) {
+                try {
+                    workManagerScheduler.get().resumePendingUploads()
+                } catch (e: Exception) {
+                    // Non-blocking recovery
+                }
             }
         }
     }
@@ -207,13 +222,11 @@ class MainActivity : ComponentActivity() {
         val leadId = intent.getStringExtra(com.leads365.apk.notifications.LeadsNotificationManager.EXTRA_LEAD_ID)
         if (!leadId.isNullOrBlank()) {
             lifecycleScope.launch {
-                when (val res = leadRepository.getLeadById(leadId)) {
-                    is com.leads365.apk.core.AppResult.Success -> {
-                        res.data?.let { lead ->
-                            leadsViewModel.selectLeadForDetail(lead)
-                        }
+                val res = leadRepository.get().getLeadById(leadId)
+                if (res is com.leads365.apk.core.AppResult.Success) {
+                    res.data?.let { lead ->
+                        leadsViewModel.selectLeadForDetail(lead)
                     }
-                    else -> {}
                 }
             }
         }

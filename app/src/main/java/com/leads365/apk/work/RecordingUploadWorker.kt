@@ -119,11 +119,33 @@ class RecordingUploadWorker(
             return@withContext Result.retry()
         }
 
-        // 4. Update status to UPLOADING
+        // 4. Ensure Call Record is Persisted to Backend (Required before file streaming)
+        val targetCallId = task.callId
+        if (!targetCallId.isNullOrBlank()) {
+            val localCall = (callRepository.getCallById(targetCallId) as? AppResult.Success)?.data
+            if (localCall != null && localCall.syncStatus != "SYNCED") {
+                Log.i(TAG, "Call record $targetCallId has syncStatus=${localCall.syncStatus}. Synchronizing to backend before file upload.")
+                val reportResult = callRepository.reportCallToBackend(targetCallId)
+                if (reportResult is AppResult.Failure) {
+                    val errorMsg = reportResult.error.message ?: "Failed to report call to backend before recording upload"
+                    Log.w(TAG, "Call pre-upload report failed for $targetCallId: $errorMsg")
+                    if (reportResult.error is com.leads365.apk.core.AppError.NetworkError) {
+                        uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_RETRY_WAIT, errorMsg)
+                        return@withContext Result.retry()
+                    } else {
+                        uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_REJECTED_BY_SERVER, errorMsg)
+                        showNotification(applicationContext, task.fileName, "Upload rejected: $errorMsg")
+                        return@withContext Result.failure()
+                    }
+                }
+            }
+        }
+
+        // 5. Update status to UPLOADING
         uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_UPLOADING)
         showNotification(applicationContext, task.fileName, "Uploading call recording...")
 
-        // 5. Execute Streaming Upload
+        // 6. Execute Streaming Upload
         return@withContext when (val result = uploadManager.uploadRecording(task)) {
             is UploadExecutionResult.Success -> {
                 Log.i(TAG, "Upload succeeded for task ${task.id}, call ${task.callId}. AlreadyUploaded=${result.isAlreadyUploaded}")

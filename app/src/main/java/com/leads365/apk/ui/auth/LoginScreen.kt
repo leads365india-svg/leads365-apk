@@ -39,17 +39,12 @@ import com.leads365.apk.ui.theme.*
 @Composable
 fun LoginScreen(
     viewModel: AuthViewModel,
-    onNavigateToSetup: () -> Unit
+    onNavigateToSetup: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
     val scrollState = rememberScrollState()
-    var isEnteringTestMode by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        isEnteringTestMode = false
-    }
 
     Column(
         modifier = Modifier
@@ -237,88 +232,6 @@ fun LoginScreen(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
-                    }
-                }
-
-                // Local Recording Test Mode Bypass (strictly dev flavor only)
-                if (BuildConfig.FLAVOR == "dev") {
-                    Surface(
-                        color = Blue50.copy(alpha = 0.7f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Blue100),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = "Local Recording Test Mode (Dev Only)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Slate900
-                            )
-                            Text(
-                                text = "Test native recording folder, local call & discovery without CRM login.",
-                                fontSize = 11.sp,
-                                color = Slate600,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 15.sp
-                            )
-                            Text(
-                                text = "Backend: ${BuildConfig.BASE_URL}",
-                                fontSize = 10.sp,
-                                color = Blue600,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Button(
-                                onClick = {
-                                    if (!isEnteringTestMode && !uiState.isLoading) {
-                                        isEnteringTestMode = true
-                                        onNavigateToSetup()
-                                    }
-                                },
-                                enabled = !isEnteringTestMode && !uiState.isLoading,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Blue600,
-                                    disabledContainerColor = Blue600.copy(alpha = 0.65f)
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp)
-                            ) {
-                                if (isEnteringTestMode) {
-                                    CircularProgressIndicator(
-                                        color = Color.White,
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Entering Test Mode...",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                } else {
-                                    Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Enter Local Recording Test Mode →",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }

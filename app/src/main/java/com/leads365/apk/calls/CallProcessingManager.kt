@@ -126,13 +126,18 @@ class CallProcessingManager(
             else -> null
         }
 
-        // Fallback: check last 10 digits
+        // Fallback: check last 10 digits across normalized and raw number fields
         if (matchingLead == null) {
-            val incomingLast10 = normalizer.extractLast10Digits(normalizedNumber)
+            val incomingLast10 = normalizer.extractLast10Digits(normalizedNumber).ifEmpty {
+                normalizer.extractLast10Digits(callEvent.rawNumber)
+            }
             if (incomingLast10.isNotEmpty()) {
                 val allLeads = (leadRepository.getAllLeads() as? AppResult.Success)?.data.orEmpty()
                 matchingLead = allLeads.firstOrNull { lead ->
-                    normalizer.extractLast10Digits(lead.normalizedNumber) == incomingLast10
+                    val norm10 = normalizer.extractLast10Digits(lead.normalizedNumber)
+                    val raw10 = normalizer.extractLast10Digits(lead.rawNumber)
+                    (norm10.isNotEmpty() && norm10 == incomingLast10) ||
+                    (raw10.isNotEmpty() && raw10 == incomingLast10)
                 }
             }
         }

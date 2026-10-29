@@ -1,8 +1,10 @@
 package com.leads365.apk.network.api
 
+import com.leads365.apk.network.models.CallListResponse
 import com.leads365.apk.network.models.CallReportRequest
 import com.leads365.apk.network.models.CallReportResponse
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 
 interface CallApiService {
@@ -11,4 +13,7 @@ interface CallApiService {
     suspend fun reportCall(
         @Body request: CallReportRequest
     ): CallReportResponse
+
+    @GET("mobile/v1/calls")
+    suspend fun getCalls(): CallListResponse = CallListResponse(success = true, data = emptyList())
 }

@@ -66,28 +66,14 @@ fun Step3TestCall(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Title & Subtitle (English only)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Make a Test Call",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy900,
-                    fontSize = 18.sp
-                )
-                Text(
-                    text = "Step 3 of 4",
-                    fontSize = 12.sp,
-                    color = BlueAccent,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Make or receive a call to your configured test lead. Leads365 will detect the call completion and match the recording safely.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 17.sp
-                )
-            }
+            // Title (English only)
+            Text(
+                text = "Make a Test Call",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Navy900,
+                fontSize = 18.sp
+            )
 
             // Live Call Monitoring Status Banner
             Surface(
@@ -123,31 +109,19 @@ fun Step3TestCall(
                     when (callMonitoringState) {
                         is CallMonitoringState.Ringing -> {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AmberWarning)
-                            Column {
-                                Text("Phone is Ringing...", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
-                                Text("Answer or decline the call to proceed.", fontSize = 10.sp, color = Color(0xFF92400E))
-                            }
+                            Text("Phone is Ringing...", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
                         }
                         is CallMonitoringState.CallActive -> {
                             Icon(Icons.Default.PhoneInTalk, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(16.dp))
-                            Column {
-                                Text("Call in Progress...", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8))
-                                Text("Hang up when done (speak 15-30s for testing).", fontSize = 10.sp, color = Color(0xFF1E40AF))
-                            }
+                            Text("Call in Progress...", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8))
                         }
                         is CallMonitoringState.CallEndedQueryingLog -> {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFF7E22CE))
-                            Column {
-                                Text("Call Ended! Reading Call Log (Attempt ${callMonitoringState.attempt}/4)...", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE))
-                                Text("Waiting for phone dialer to flush call details...", fontSize = 10.sp, color = Color(0xFF6B21A8))
-                            }
+                            Text("Call Ended! Reading Call Log (Attempt ${callMonitoringState.attempt}/4)...", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE))
                         }
                         is CallMonitoringState.CallDetected -> {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(16.dp))
-                            Column {
-                                Text("Call-log event detected", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
-                                Text("Call detected in system Call Log. Audio file discovery in progress...", fontSize = 10.sp, color = Color(0xFF166534))
-                            }
+                            Text("Call-log event detected", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
                         }
                         is CallMonitoringState.CallLogUnavailable -> {
                             Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(16.dp))
@@ -159,10 +133,7 @@ fun Step3TestCall(
                         }
                         else -> {
                             Icon(Icons.Default.Radio, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(16.dp))
-                            Column {
-                                Text("Call Monitor Active", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
-                                Text("Waiting for incoming or outgoing call...", fontSize = 10.sp, color = TextSecondaryLight)
-                            }
+                            Text("Call Monitor Active", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
                         }
                     }
                 }
@@ -266,13 +237,6 @@ fun Step3TestCall(
                             ) {
                                 Icon(Icons.Default.PersonAdd, contentDescription = null, tint = BlueAccent, modifier = Modifier.size(28.dp))
                                 Text("No Test Lead Configured", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
-                                Text(
-                                    text = "Add the phone number you will use to place or receive test calls. Only configured leads are checked for recordings.",
-                                    fontSize = 11.sp,
-                                    color = TextSecondaryLight,
-                                    textAlign = TextAlign.Center,
-                                    lineHeight = 15.sp
-                                )
                                 Button(
                                     onClick = { showAddDialog = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = Navy800),
@@ -375,16 +339,6 @@ fun Step3TestCall(
                         )
                     }
 
-                    Text(
-                        text = "1. Enable automatic call recording in your phone dialer settings (Vivo: Phone app -> Settings (...) -> Call recording -> Record all calls automatically).\n" +
-                                "2. Make a real phone call to or receive a call from your configured test lead (speak 15-30 seconds).\n" +
-                                "3. Hang up and return to Leads365.\n" +
-                                "4. If not detected automatically, tap 'Check for Recent Call' below.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF166534),
-                        lineHeight = 16.sp
-                    )
-
                     // Prominent Check Recent Call Button
                     Button(
                         onClick = onCheckRecentCall,
@@ -464,11 +418,6 @@ fun Step3TestCall(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Text(
-                            text = "Call-log event detected. Tap 'View Result →' to inspect dialer audio recording discovery.",
-                            fontSize = 10.sp,
-                            color = Color(0xFF64748B)
-                        )
 
                         // Gate Result Explanation
                         when (gateResult) {
@@ -536,12 +485,6 @@ fun Step3TestCall(
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         color = Navy800
-                    )
-                    Text(
-                        text = "Notice: Simulated calls test UI workflows and lead-gating rules only. They do NOT verify that your physical phone dialer creates accessible audio recordings.",
-                        fontSize = 10.sp,
-                        color = TextSecondaryLight,
-                        lineHeight = 14.sp
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),

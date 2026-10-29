@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 
 import com.leads365.apk.calls.CallLogDiagnosticResult
 
@@ -313,17 +314,11 @@ class MainViewModel @Inject constructor(
         val safConfigured = safUri != null
         val safValid = safRecordingSource.isAccessible()
         val mediaStoreAccessible = mediaStoreRecordingSource.isAccessible()
-        val callLogStatus = callLogReader.checkCallLogAccess()
-        val callLogDiag = callLogReader.diagnoseCallLogAccess()
 
         // Auto-start CallStateObserver if phone state permission is granted and not yet listening
         if (callStateObserver.hasPhoneStatePermission() && !callStateObserver.isObserving()) {
             callStateObserver.startObserving()
         }
-
-        val safInspection = if (safConfigured && safValid) {
-            safRecordingSource.inspectFolderContent()
-        } else null
 
         val hasTestCall = _uiState.value.recentCallEvent != null
         val hasMatch = _uiState.value.matchingResult?.status == MatchStatus.FILE_FOUND
@@ -340,21 +335,40 @@ class MainViewModel @Inject constructor(
         val validSelectedId = currentSelectedId?.takeIf { id -> currentLeads.any { it.id == id } }
             ?: currentLeads.firstOrNull()?.id
 
+        // Immediate responsive state update without blocking on disk/SAF
         _uiState.update { current ->
             current.copy(
                 permissions = permissions,
-                callLogAccessStatus = callLogStatus,
-                callLogDiagnostic = callLogDiag,
                 safUriString = safUri?.toString(),
                 safConfigured = safConfigured,
                 safValid = safValid,
-                safInspection = safInspection,
                 mediaStoreAccessible = mediaStoreAccessible,
                 overallStatus = overall,
                 testLeads = currentLeads,
                 selectedLeadId = validSelectedId,
                 auditLogs = callGateManager.getAuditTrace()
             )
+        }
+
+        // Heavy I/O offloaded asynchronously to Dispatchers.IO to eliminate main thread jank
+        viewModelScope.launch(Dispatchers.IO) {
+            val callLogStatus = callLogReader.checkCallLogAccess()
+            val callLogDiag = callLogReader.diagnoseCallLogAccess()
+            val safInspection = if (safConfigured && safValid) {
+                try {
+                    safRecordingSource.inspectFolderContent()
+                } catch (e: Exception) {
+                    null
+                }
+            } else null
+
+            _uiState.update { current ->
+                current.copy(
+                    callLogAccessStatus = callLogStatus,
+                    callLogDiagnostic = callLogDiag,
+                    safInspection = safInspection
+                )
+            }
         }
     }
 

@@ -219,11 +219,6 @@ fun SettingsScreen(
                             fontSize = 15.sp,
                             color = Navy900
                         )
-                        Text(
-                            text = "Configure recording folder access & verify hardware call matching",
-                            fontSize = 11.sp,
-                            color = TextSecondaryLight
-                        )
                     }
 
                     Button(
@@ -275,13 +270,6 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.5.sp,
                             color = Slate900
-                        )
-                        Text(
-                            text = "Choose between local device dialer and cloud bridge fallback",
-                            fontSize = 11.sp,
-                            color = Slate500,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
 
@@ -344,11 +332,6 @@ fun SettingsScreen(
                 }
 
                 if (selectedCallMode == com.leads365.apk.telephony.TelephonyCallMode.CLOUD_TELEPHONY.name) {
-                    Text(
-                        text = "Cloud Telephony bridges your phone to the lead via telecom provider (Exotel/Twilio). Call is recorded at the switch. Enter the phone number you want the service to call first:",
-                        fontSize = 11.sp,
-                        color = Slate500
-                    )
                     OutlinedTextField(
                         value = agentPhone,
                         onValueChange = {
@@ -362,12 +345,6 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         shape = RoundedCornerShape(8.dp)
-                    )
-                } else {
-                    Text(
-                        text = "Native Dialer mode places calls directly using your SIM card. Audio recordings are discovered locally from device storage via SAF/MediaStore.",
-                        fontSize = 11.sp,
-                        color = Slate500
                     )
                 }
             }
@@ -396,13 +373,6 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.5.sp,
                             color = Slate900
-                        )
-                        Text(
-                            text = "Operational readiness & prerequisite audit",
-                            fontSize = 11.sp,
-                            color = Slate500,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
 
@@ -472,12 +442,6 @@ fun SettingsScreen(
                             )
                         }
                     }
-                } else {
-                    Text(
-                        text = "Diagnostics have not yet run. Tap 'Run Self-Test' to evaluate device readiness.",
-                        fontSize = 12.sp,
-                        color = TextSecondaryLight
-                    )
                 }
             }
         }
@@ -516,13 +480,6 @@ fun SettingsScreen(
                         )
                     }
                 }
-
-                Text(
-                    text = "Displays lead name, status, and last note when calling or receiving a call from an assigned lead. When overlay permission is disabled, Leads365 uses a high-priority heads-up notification instead.",
-                    color = TextSecondaryLight,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
 
                 Button(
                     onClick = onRequestOverlayPermission,
@@ -664,11 +621,6 @@ fun SettingsScreen(
                             fontSize = 15.sp,
                             color = Navy900
                         )
-                        Text(
-                            text = "Agency policy, DNR status & confirmed uploads",
-                            fontSize = 12.sp,
-                            color = TextSecondaryLight
-                        )
                     }
                 }
                 Icon(
@@ -694,7 +646,6 @@ fun SettingsScreen(
                 )
 
                 EnvironmentRow(label = "Flavour", value = BuildConfig.FLAVOR.uppercase())
-                EnvironmentRow(label = "Base URL", value = BuildConfig.BASE_URL)
                 EnvironmentRow(label = "Version Name", value = BuildConfig.VERSION_NAME)
                 EnvironmentRow(label = "Version Code", value = BuildConfig.VERSION_CODE.toString())
                 EnvironmentRow(label = "Build Type", value = BuildConfig.BUILD_TYPE)

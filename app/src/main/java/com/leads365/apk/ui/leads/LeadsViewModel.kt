@@ -50,14 +50,15 @@ class LeadsViewModel @Inject constructor(
     private val callProcessingManager: CallProcessingManager? = null,
     private val callRepository: CallRepository? = null,
     private val followUpRepository: com.leads365.apk.data.repository.FollowUpRepository? = null,
-    private val cloudTelephonyManager: com.leads365.apk.telephony.CloudTelephonyManager? = null
+    private val cloudTelephonyManager: com.leads365.apk.telephony.CloudTelephonyManager? = null,
+    private val authRepository: com.leads365.apk.data.repository.AuthRepository? = null
 ) : ViewModel() {
 
     // Secondary constructor for tests that supply only repository & scheduler
     constructor(
         leadRepository: LeadRepository,
         workManagerScheduler: WorkManagerScheduler
-    ) : this(leadRepository, workManagerScheduler, null, null, null, null, null)
+    ) : this(leadRepository, workManagerScheduler, null, null, null, null, null, null)
 
     private val _uiState = MutableStateFlow(
         LeadsUiState(lastSyncTimeEpochMs = leadRepository.getLastSyncTimestamp())
@@ -78,8 +79,11 @@ class LeadsViewModel @Inject constructor(
     )
 
     init {
-        workManagerScheduler.schedulePeriodicLeadSync()
-        syncLeads()
+        val shouldSync = authRepository?.isLoggedIn() == true || (authRepository == null && leadRepository.getLastSyncTimestamp() > 0L)
+        if (shouldSync) {
+            workManagerScheduler.schedulePeriodicLeadSync()
+            syncLeads()
+        }
 
         // Listen for completed lead calls to prompt Post-Call Outcome dialog
         callProcessingManager?.let { manager ->

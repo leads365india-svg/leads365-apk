@@ -51,28 +51,14 @@ fun Step2Folder(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Title & Subtitle (English only)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Recording Folder",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy900,
-                    fontSize = 18.sp
-                )
-                Text(
-                    text = "Step 2 of 4",
-                    fontSize = 12.sp,
-                    color = BlueAccent,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Select the folder where your phone's dialer saves call recordings. Leads365 needs read access to verify that recordings match test calls.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 17.sp
-                )
-            }
+            // Title (English only)
+            Text(
+                text = "Recording Folder",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Navy900,
+                fontSize = 18.sp
+            )
 
             // Prominent Folder Selector Box
             Surface(
@@ -236,48 +222,7 @@ fun Step2Folder(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Select Recording Folder", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
-
-                        Text(
-                            text = "How to select: In the system file picker, choose phone storage, open 'Recordings' or 'Call', and tap 'Use this folder'.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 15.sp
-                        )
                     }
-                }
-            }
-
-            // Accurate "Enable call recording" Guidance Section
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFFF8FAFC),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(Icons.Default.Mic, contentDescription = null, tint = Navy800, modifier = Modifier.size(18.dp))
-                        Text(
-                            text = "Enable call recording",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = Navy900
-                        )
-                    }
-                    Text(
-                        text = "• Open your phone's native Phone/Dialer app settings and turn on automatic call recording, if supported by your dialer and region.\n" +
-                                "• Leads365 cannot turn on system call recording directly due to Android security restrictions. Availability depends on your device manufacturer, dialer app, and regional policies.\n" +
-                                "• If automatic recording is not available in your phone's dialer, the phone may not be able to provide recordings for Leads365 to match.",
-                        fontSize = 11.sp,
-                        color = TextSecondaryLight,
-                        lineHeight = 16.sp
-                    )
                 }
             }
 
@@ -309,12 +254,6 @@ fun Step2Folder(
                             }
                         }
                     }
-                    Text(
-                        text = "If your phone dialer saves directly to public media audio, Leads365 can search automatically without folder selection.",
-                        fontSize = 11.sp,
-                        color = TextSecondaryLight,
-                        lineHeight = 15.sp
-                    )
                     if (activeMethod != RecordingDiscoveryMethod.MEDIA_STORE && mediaStoreAccessible) {
                         TextButton(
                             onClick = { onSelectMethod(RecordingDiscoveryMethod.MEDIA_STORE) },

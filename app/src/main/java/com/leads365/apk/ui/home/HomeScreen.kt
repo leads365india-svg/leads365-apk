@@ -410,15 +410,6 @@ fun HomeScreen(
                                 color = TextSecondaryLight,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Button(
-                                onClick = onNavigateToSetup,
-                                colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.heightIn(min = 38.dp)
-                            ) {
-                                Text("Run Test Call in Setup", fontSize = 11.sp)
-                            }
                         }
                     }
                 } else {

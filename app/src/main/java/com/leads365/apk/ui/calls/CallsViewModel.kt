@@ -96,6 +96,10 @@ class CallsViewModel @Inject constructor(
 
                 _discoveredCandidates.value = (safList + mediaStoreList).distinctBy { it.uriString }
                 refreshAccessState()
+
+                try {
+                    callRepository.syncCallsFromBackend()
+                } catch (ignored: Exception) {}
             } catch (e: Exception) {
                 Log.w("CallsViewModel", "Error loading discovered recordings: ${e.message}")
             }

@@ -207,13 +207,19 @@ open class RecordingUploadManager @Inject constructor(
                         )
                     }
                     400 -> {
-                        UploadExecutionResult.RejectedByServer(400, "Server rejected upload (checksum or bad request): $responseBody")
+                        val sanitized = extractErrorMessage(responseBody, "Server rejected upload (checksum or bad request)")
+                        UploadExecutionResult.RejectedByServer(400, sanitized)
                     }
                     401 -> {
                         UploadExecutionResult.RetryableFailure(401, "Authentication required or revoked device token")
                     }
                     403 -> {
-                        UploadExecutionResult.RejectedByServer(403, "Server rejected upload (DNR, cross-tenant or unassigned lead): $responseBody")
+                        val sanitized = extractErrorMessage(responseBody, "Server rejected upload (DNR, cross-tenant or unassigned lead)")
+                        UploadExecutionResult.RejectedByServer(403, sanitized)
+                    }
+                    404 -> {
+                        val sanitized = extractErrorMessage(responseBody, "Call record not found on server")
+                        UploadExecutionResult.RetryableFailure(404, sanitized)
                     }
                     413 -> {
                         UploadExecutionResult.PermanentFailure(413, "File exceeds maximum permitted size (50MB)")
@@ -228,7 +234,8 @@ open class RecordingUploadManager @Inject constructor(
                         UploadExecutionResult.RetryableFailure(code, "Server error (HTTP $code). Will retry.")
                     }
                     else -> {
-                        UploadExecutionResult.PermanentFailure(code, "Unexpected response from upload server: HTTP $code - $responseBody")
+                        val sanitized = extractErrorMessage(responseBody, "Unexpected response from upload server: HTTP $code")
+                        UploadExecutionResult.PermanentFailure(code, sanitized)
                     }
                 }
             }
@@ -238,6 +245,16 @@ open class RecordingUploadManager @Inject constructor(
             UploadExecutionResult.RetryableFailure(null, "Network I/O failure during streaming upload: ${e.message}")
         } catch (e: Exception) {
             UploadExecutionResult.PermanentFailure(null, "Upload error: ${e.message}")
+        }
+    }
+
+    internal fun extractErrorMessage(responseBody: String, defaultMessage: String): String {
+        return try {
+            val json = JSONObject(responseBody)
+            val err = json.optString("error", "").ifBlank { json.optString("message", "") }
+            if (err.isNotBlank()) err else defaultMessage
+        } catch (e: Exception) {
+            defaultMessage
         }
     }
 

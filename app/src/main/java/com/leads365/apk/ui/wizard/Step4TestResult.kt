@@ -46,21 +46,13 @@ fun Step4TestResult(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Header (English only)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Test Result",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy900,
-                    fontSize = 18.sp
-                )
-                Text(
-                    text = "Step 4 of 4",
-                    fontSize = 12.sp,
-                    color = BlueAccent,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            Text(
+                text = "Test Result",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Navy900,
+                fontSize = 18.sp
+            )
 
             // Stage 1: Call-Log Event Detected Banner (Clear distinction from audio file existence)
             if (recentCallEvent != null) {
@@ -98,11 +90,6 @@ fun Step4TestResult(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Navy900
-                        )
-                        Text(
-                            text = "Notice: Call-log detection confirms the call ended. It is NOT proof that an audio recording file exists until dialer discovery completes below.",
-                            fontSize = 10.sp,
-                            color = Color(0xFF64748B)
                         )
                     }
                 }
@@ -253,33 +240,6 @@ fun Step4TestResult(
                         badgeFg = TextSecondaryLight,
                         icon = Icons.Default.Info,
                         iconTint = TextSecondaryLight
-                    )
-                }
-            }
-
-            // Dialer System Notice
-            Surface(
-                color = Color(0xFFF8FAFC),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        tint = BlueAccent,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Notice: The phone's dialer must support and generate call recordings. Leads365 cannot turn on system call recording automatically.",
-                        fontSize = 11.sp,
-                        color = TextSecondaryLight,
-                        lineHeight = 15.sp
                     )
                 }
             }
@@ -496,17 +456,6 @@ private fun RecordingFoundCard(
                 }
             }
 
-            Text(
-                text = if (isSimulated) {
-                    "This test simulation confirmed UI matching and privacy gating. Hardware recording discovery remains unverified until an actual physical call is recorded."
-                } else {
-                    "Your phone's native dialer call recording was successfully detected and matched to the test lead without audio tapping or root."
-                },
-                fontSize = 11.sp,
-                color = if (isSimulated) Color(0xFF92400E) else Color(0xFF166534),
-                lineHeight = 15.sp
-            )
-
             // Upload Status / Action
             when (uploadState) {
                 is UploadState.Idle -> {
@@ -573,12 +522,6 @@ private fun RecordingFoundCard(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFB45309),
-                                        softWrap = true
-                                    )
-                                    Text(
-                                        "The native dialer recording was verified readable on this device. Cloud uploads require an authenticated agent session.",
-                                        fontSize = 10.sp,
-                                        color = Color(0xFF92400E),
                                         softWrap = true
                                     )
                                 }

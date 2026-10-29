@@ -197,6 +197,52 @@ class CallRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun syncCallsFromBackend(): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            val response = callApiService.getCalls()
+            if (!response.success) {
+                return@withContext AppResult.Failure(AppError.NetworkError(response.error ?: "Failed to fetch calls from server"))
+            }
+
+            var insertedCount = 0
+            for (dto in response.data) {
+                val callId = dto.clientCallId?.ifBlank { null } ?: dto.id?.ifBlank { null } ?: continue
+                val existing = callDao.getByClientCallId(callId) ?: callDao.getById(callId)
+                if (existing == null) {
+                    val rawPhone = dto.phoneNumber ?: dto.number ?: ""
+                    val directionInt = when (dto.callDirection ?: dto.direction) {
+                        "INCOMING", "inbound" -> CallLog.Calls.INCOMING_TYPE
+                        "OUTGOING", "outbound" -> CallLog.Calls.OUTGOING_TYPE
+                        "MISSED" -> CallLog.Calls.MISSED_TYPE
+                        "REJECTED" -> CallLog.Calls.REJECTED_TYPE
+                        else -> CallLog.Calls.OUTGOING_TYPE
+                    }
+                    val entity = CallEntity(
+                        id = callId,
+                        clientCallId = callId,
+                        normalizedNumber = rawPhone,
+                        rawNumber = rawPhone,
+                        callType = directionInt,
+                        startTimeEpochMs = dto.startTimeMs ?: System.currentTimeMillis(),
+                        durationSeconds = dto.durationSeconds ?: dto.duration ?: 0L,
+                        isLeadCall = !dto.leadId.isNullOrBlank() && !dto.isUnlinked,
+                        leadId = dto.leadId,
+                        simId = dto.simId,
+                        callOutcome = dto.callOutcome ?: dto.outcome,
+                        notes = dto.notes,
+                        syncStatus = "SYNCED",
+                        createdAtEpochMs = dto.startTimeMs ?: System.currentTimeMillis()
+                    )
+                    callDao.insert(entity)
+                    insertedCount++
+                }
+            }
+            AppResult.Success(insertedCount)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.NetworkError("Call sync failed: ${e.message}", cause = e))
+        }
+    }
+
     override suspend fun deleteCallById(id: String): AppResult<Unit> = withContext(ioDispatcher) {
         try {
             callDao.deleteById(id)

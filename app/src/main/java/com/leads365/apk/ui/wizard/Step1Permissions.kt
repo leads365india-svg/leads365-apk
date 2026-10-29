@@ -58,7 +58,7 @@ fun Step1Permissions(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Screen Title & Subtitle (English only)
+            // Screen Title
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = "Permissions & Onboarding Checklist",
@@ -66,18 +66,6 @@ fun Step1Permissions(
                     fontWeight = FontWeight.Bold,
                     color = Navy900,
                     fontSize = 18.sp
-                )
-                Text(
-                    text = "Step 1 of 4 • Phone & Recording Readiness",
-                    fontSize = 12.sp,
-                    color = BlueAccent,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Leads365 requires phone state and call-log permissions to detect calls and verify dialer recording matches. Audio files are never altered, deleted, or uploaded without your confirmation. No contacts, SMS, location, or microphone permissions are ever requested.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 17.sp
                 )
             }
 
@@ -102,12 +90,6 @@ fun Step1Permissions(
                                 fontSize = 13.sp,
                                 color = Color(0xFF15803D)
                             )
-                            Text(
-                                text = "A test call was successfully matched to a real dialer audio recording on this device.",
-                                fontSize = 11.sp,
-                                color = Color(0xFF166534),
-                                lineHeight = 15.sp
-                            )
                         }
                     }
                 }
@@ -130,12 +112,6 @@ fun Step1Permissions(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color(0xFF92400E)
-                            )
-                            Text(
-                                text = "Connecting a folder or granting permissions does not verify recording capability. Leads365 must complete a test call with a real dialer audio file in Step 4 to confirm compatibility.",
-                                fontSize = 11.sp,
-                                color = Color(0xFF92400E),
-                                lineHeight = 15.sp
                             )
                         }
                     }
@@ -169,13 +145,6 @@ fun Step1Permissions(
                             color = Navy900
                         )
                     }
-                    Text(
-                        text = "• For Vivo ($deviceModel): Open the native Phone dialer -> Settings (...) -> Call recording settings -> Record all calls automatically.\n• Leads365 cannot turn on system call recording automatically due to Android platform security boundaries.",
-                        fontSize = 11.sp,
-                        color = TextSecondaryLight,
-                        lineHeight = 15.sp,
-                        modifier = Modifier.padding(start = 6.dp)
-                    )
                 }
             }
 

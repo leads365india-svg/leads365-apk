@@ -24,3 +24,30 @@ data class CallReportResponse(
     val message: String? = null,
     val error: String? = null
 )
+
+@Serializable
+data class CallDto(
+    @SerialName("_id") val id: String? = null,
+    @SerialName("clientCallId") val clientCallId: String? = null,
+    @SerialName("leadId") val leadId: String? = null,
+    @SerialName("direction") val direction: String? = null,
+    @SerialName("callDirection") val callDirection: String? = null,
+    @SerialName("number") val number: String? = null,
+    @SerialName("phoneNumber") val phoneNumber: String? = null,
+    @SerialName("startTimeMs") val startTimeMs: Long? = null,
+    @SerialName("duration") val duration: Long? = null,
+    @SerialName("durationSeconds") val durationSeconds: Long? = null,
+    @SerialName("callOutcome") val callOutcome: String? = null,
+    @SerialName("outcome") val outcome: String? = null,
+    @SerialName("notes") val notes: String? = null,
+    @SerialName("simId") val simId: String? = null,
+    @SerialName("isUnlinked") val isUnlinked: Boolean = false
+)
+
+@Serializable
+data class CallListResponse(
+    val success: Boolean = true,
+    val data: List<CallDto> = emptyList(),
+    val error: String? = null,
+    val message: String? = null
+)

@@ -1,5 +1,6 @@
 package com.leads365.apk.ui.upload
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,6 +36,7 @@ fun UploadStatusScreen(
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val wifiOnly by viewModel.wifiOnly.collectAsState()
+    val selectedTaskIds by viewModel.selectedTaskIds.collectAsState()
 
     val uploadedCount = tasks.count {
         it.status == UploadTaskEntity.STATE_UPLOADED || it.status == UploadTaskEntity.STATUS_COMPLETED
@@ -42,7 +44,8 @@ fun UploadStatusScreen(
     val inProgressCount = tasks.count {
         it.status == UploadTaskEntity.STATE_UPLOADING || it.status == UploadTaskEntity.STATUS_IN_PROGRESS
     }
-    val retryCount = tasks.count { it.status == UploadTaskEntity.STATE_RETRY_WAIT }
+    val eligibleTasks = tasks.filter { viewModel.isTaskEligibleForUpload(it) }
+    val selectedCount = selectedTaskIds.size
 
     Scaffold(
         topBar = {
@@ -117,17 +120,76 @@ fun UploadStatusScreen(
                                 fontSize = 14.sp,
                                 color = Navy900
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Pause recording uploads when connected to mobile data",
-                                fontSize = 12.sp,
-                                color = TextSecondaryLight
-                            )
                         }
                         Switch(
                             checked = wifiOnly,
                             onCheckedChange = { viewModel.setWifiOnly(it) }
                         )
+                    }
+                }
+            }
+
+            // Selection & Batch Action Toolbar (only displayed when tasks exist)
+            if (tasks.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Slate100),
+                        border = BorderStroke(1.dp, Slate200)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    if (selectedCount == eligibleTasks.size && eligibleTasks.isNotEmpty()) {
+                                        viewModel.clearSelection()
+                                    } else {
+                                        viewModel.selectAllEligible()
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = if (selectedCount == eligibleTasks.size && eligibleTasks.isNotEmpty()) {
+                                        "Deselect All"
+                                    } else {
+                                        "Select All Eligible (${eligibleTasks.size})"
+                                    },
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Blue600
+                                )
+                            }
+
+                            Button(
+                                onClick = { viewModel.uploadSelectedTasks() },
+                                enabled = selectedCount > 0,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Blue600,
+                                    disabledContainerColor = Slate300
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudUpload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (selectedCount > 0) "Upload Selected ($selectedCount)" else "Upload Selected",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -168,8 +230,14 @@ fun UploadStatusScreen(
                 }
             } else {
                 items(tasks, key = { it.id }) { task ->
+                    val isEligible = viewModel.isTaskEligibleForUpload(task)
+                    val isSelected = selectedTaskIds.contains(task.id)
+
                     UploadTaskCard(
                         task = task,
+                        isEligible = isEligible,
+                        isSelected = isSelected,
+                        onToggleSelect = { viewModel.toggleTaskSelection(task.id) },
                         onRetry = { viewModel.retryTask(task) }
                     )
                 }
@@ -181,6 +249,9 @@ fun UploadStatusScreen(
 @Composable
 fun UploadTaskCard(
     task: UploadTaskEntity,
+    isEligible: Boolean = true,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onRetry: () -> Unit
 ) {
     val dateStr = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(task.updatedAtEpochMs))
@@ -199,7 +270,7 @@ fun UploadTaskCard(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Header Row: File Name & Status Badge
+            // Header Row: Checkbox, File Name & Status Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -207,9 +278,17 @@ fun UploadTaskCard(
             ) {
                 Row(
                     modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (isEligible) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onToggleSelect() },
+                            colors = CheckboxDefaults.colors(checkedColor = Blue600)
+                        )
+                    }
+
                     Box(
                         modifier = Modifier
                             .size(36.dp)

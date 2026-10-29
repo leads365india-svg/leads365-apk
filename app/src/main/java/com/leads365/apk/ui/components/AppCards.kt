@@ -101,14 +101,6 @@ fun AppHeaderCard(
                 lineHeight = 22.sp
             )
 
-            // Row 3: Concise 1-2 line explanation
-            Text(
-                text = "Configures native dialer recording access, permission gating, and lead-only matching for this device.",
-                color = Color(0xFFCBD5E1),
-                fontSize = 12.sp,
-                lineHeight = 17.sp
-            )
-
             // Row 4: Device & OS info (flow-safe chips)
             Row(
                 modifier = Modifier.fillMaxWidth(),

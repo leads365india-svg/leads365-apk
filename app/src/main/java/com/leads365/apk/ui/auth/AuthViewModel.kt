@@ -29,10 +29,22 @@ data class LoginUiState(
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val leadRepository: com.leads365.apk.data.repository.LeadRepository,
-    private val callRepository: com.leads365.apk.data.repository.CallRepository,
-    private val workManagerScheduler: com.leads365.apk.work.WorkManagerScheduler
+    private val leadRepository: dagger.Lazy<com.leads365.apk.data.repository.LeadRepository>,
+    private val callRepository: dagger.Lazy<com.leads365.apk.data.repository.CallRepository>,
+    private val workManagerScheduler: dagger.Lazy<com.leads365.apk.work.WorkManagerScheduler>
 ) : ViewModel() {
+
+    constructor(
+        authRepository: AuthRepository,
+        leadRepository: com.leads365.apk.data.repository.LeadRepository,
+        callRepository: com.leads365.apk.data.repository.CallRepository,
+        workManagerScheduler: com.leads365.apk.work.WorkManagerScheduler
+    ) : this(
+        authRepository = authRepository,
+        leadRepository = dagger.Lazy { leadRepository },
+        callRepository = dagger.Lazy { callRepository },
+        workManagerScheduler = dagger.Lazy { workManagerScheduler }
+    )
 
     val authState: StateFlow<AuthState> = authRepository.authState
 
@@ -119,8 +131,8 @@ class AuthViewModel @Inject constructor(
             when (val result = authRepository.login(email, password)) {
                 is AppResult.Success -> {
                     registerCurrentDevice()
-                    workManagerScheduler.triggerOneTimeLeadSync(forceFullSync = true)
-                    workManagerScheduler.schedulePeriodicLeadSync()
+                    workManagerScheduler.get().triggerOneTimeLeadSync(forceFullSync = true)
+                    workManagerScheduler.get().schedulePeriodicLeadSync()
                 }
                 is AppResult.Failure -> {
                     _uiState.update {
@@ -156,8 +168,8 @@ class AuthViewModel @Inject constructor(
             _uiState.update { it.copy(showLogoutDialog = false, isLoading = true) }
             authRepository.logout(preservePendingUploads = preservePendingUploads)
             try {
-                leadRepository.clearAllLeads()
-                callRepository.clearAll()
+                leadRepository.get().clearAllLeads()
+                callRepository.get().clearAll()
             } catch (e: Exception) {
                 // Non-fatal
             }
