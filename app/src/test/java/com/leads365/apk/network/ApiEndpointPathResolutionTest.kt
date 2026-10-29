@@ -19,6 +19,10 @@ import org.junit.Test
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
+import com.leads365.apk.network.api.FollowUpApiService
+import com.leads365.apk.telephony.CloudTelephonyApiService
+import com.leads365.apk.telephony.InitiateCloudCallRequest
+
 /**
  * Validates that Retrofit relative paths resolve to the exact expected
  * backend paths when Base URL ends with `/api/` (matching BuildConfig.BASE_URL).
@@ -120,5 +124,43 @@ class ApiEndpointPathResolutionTest {
 
         authApi.updatePushToken(PushTokenRequest("token-123"))
         assertEquals("/api/mobile/v1/push-token", mockWebServer.takeRequest().requestUrl?.encodedPath)
+    }
+
+    @Test
+    fun `telephony endpoints resolve to expected paths without duplicate api prefix`() = runBlocking {
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true,"call_id":"c1","status":"initiated"}"""))
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true,"call_id":"c1","status":"initiated"}"""))
+
+        val telephonyApi = retrofit.create(CloudTelephonyApiService::class.java)
+
+        telephonyApi.initiateCall(
+            InitiateCloudCallRequest(
+                leadId = "lead-1",
+                leadPhone = "+919876543210",
+                agentPhone = "+919876543211",
+                recordCall = true,
+                clientCallId = "call-1"
+            )
+        )
+        val postRequest = mockWebServer.takeRequest()
+        assertEquals("/api/telephony/call", postRequest.requestUrl?.encodedPath)
+        assertFalse(postRequest.requestUrl?.encodedPath?.contains("/api/api") == true)
+
+        telephonyApi.getCallStatus("c1")
+        val getRequest = mockWebServer.takeRequest()
+        assertEquals("/api/telephony/call/c1/status", getRequest.requestUrl?.encodedPath)
+        assertFalse(getRequest.requestUrl?.encodedPath?.contains("/api/api") == true)
+    }
+
+    @Test
+    fun `followup endpoints resolve to expected paths without duplicate api prefix`() = runBlocking {
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true,"followUps":[]}"""))
+
+        val followUpApi = retrofit.create(FollowUpApiService::class.java)
+
+        followUpApi.getFollowUps()
+        val getRequest = mockWebServer.takeRequest()
+        assertEquals("/api/follow-ups", getRequest.requestUrl?.encodedPath)
+        assertFalse(getRequest.requestUrl?.encodedPath?.contains("/api/api") == true)
     }
 }

@@ -48,7 +48,7 @@ class Phase18CloudTelephonyTest {
         mockWebServer.start()
 
         val retrofit = Retrofit.Builder()
-            .baseUrl(mockWebServer.url("/"))
+            .baseUrl(mockWebServer.url("/api/"))
             .client(OkHttpClient.Builder().build())
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()

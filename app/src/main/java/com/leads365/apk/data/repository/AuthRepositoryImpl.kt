@@ -192,9 +192,9 @@ class AuthRepositoryImpl(
         } catch (e: IOException) {
             _authState.value = AuthState.Unauthenticated
             val msg = when {
-                e is java.net.ConnectException -> "Cannot connect to server at ${BuildConfig.BASE_URL}. Ensure PC backend is running and reachable on this Wi-Fi network."
+                e is java.net.ConnectException -> "Cannot connect to server at ${BuildConfig.BASE_URL}. Ensure internet connection is active and backend service is running."
                 e is java.net.SocketTimeoutException -> "Connection timed out connecting to server at ${BuildConfig.BASE_URL}. Check network latency."
-                e is java.net.UnknownHostException -> "Unable to resolve server host (${e.message}). Check Wi-Fi connection."
+                e is java.net.UnknownHostException -> "Unable to resolve server host (${e.message}). Check internet connection."
                 e.message?.contains("CLEARTEXT", ignoreCase = true) == true -> "Cleartext HTTP traffic blocked by Android security policy. Ensure network config is enabled."
                 else -> "Network connection error: ${e.localizedMessage ?: e.message ?: "Check your connection."}"
             }

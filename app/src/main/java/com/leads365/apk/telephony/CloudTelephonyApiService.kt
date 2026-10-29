@@ -8,12 +8,12 @@ import retrofit2.http.Path
 
 interface CloudTelephonyApiService {
 
-    @POST("api/telephony/call")
+    @POST("telephony/call")
     suspend fun initiateCall(
         @Body request: InitiateCloudCallRequest
     ): Response<CloudCallStatusResponse>
 
-    @GET("api/telephony/call/{callId}/status")
+    @GET("telephony/call/{callId}/status")
     suspend fun getCallStatus(
         @Path("callId") callId: String
     ): Response<CloudCallStatusResponse>

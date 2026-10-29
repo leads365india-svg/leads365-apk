@@ -35,10 +35,13 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            val devHost = (project.findProperty("devHost") as? String)
-                ?: System.getenv("DEV_BACKEND_HOST")
-                ?: "172.25.213.99"
-            buildConfigField("String", "BASE_URL", "\"http://${devHost}:5000/api/\"")
+            val defaultLiveUrl = "https://leadmanagementsystem-hdtp.onrender.com/api/"
+            val devBackendUrl = (project.findProperty("devBackendUrl") as? String)
+                ?: (project.findProperty("devHost") as? String)?.let { "http://${it}:5000/api/" }
+                ?: System.getenv("DEV_BACKEND_URL")
+                ?: defaultLiveUrl
+            val canonicalBaseUrl = if (devBackendUrl.endsWith("/")) devBackendUrl else "$devBackendUrl/"
+            buildConfigField("String", "BASE_URL", "\"$canonicalBaseUrl\"")
             buildConfigField("String", "ENV_NAME", "\"dev\"")
         }
         create("prod") {
