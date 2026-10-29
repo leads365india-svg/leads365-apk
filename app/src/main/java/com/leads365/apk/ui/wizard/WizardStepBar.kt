@@ -32,53 +32,58 @@ fun WizardStepBar(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, Slate200)
+        color = Color.White
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            val steps = WizardStep.values()
-            steps.forEachIndexed { index, step ->
-                val isCurrent = step == currentStep
-                val isCompleted = step.stepNumber < currentStep.stepNumber
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val steps = WizardStep.values()
+                steps.forEachIndexed { index, step ->
+                    val isCurrent = step == currentStep
+                    val isCompleted = step.stepNumber < currentStep.stepNumber
 
-                StepIndicatorItem(
-                    stepNumber = step.stepNumber,
-                    title = when (step) {
-                        WizardStep.PERMISSIONS -> "Perms"
-                        WizardStep.RECORDING_FOLDER -> "Folder"
-                        WizardStep.TEST_CALL -> "Test Call"
-                        WizardStep.TEST_RESULT -> "Result"
-                    },
-                    isCurrent = isCurrent,
-                    isCompleted = isCompleted,
-                    onClick = {
-                        // Allow tapping back to previous steps
-                        if (step.stepNumber <= currentStep.stepNumber) {
-                            onStepClick(step)
+                    StepIndicatorItem(
+                        stepNumber = step.stepNumber,
+                        title = when (step) {
+                            WizardStep.PERMISSIONS -> "Perms"
+                            WizardStep.RECORDING_FOLDER -> "Folder"
+                            WizardStep.TEST_CALL -> "Test Call"
+                            WizardStep.TEST_RESULT -> "Result"
+                        },
+                        isCurrent = isCurrent,
+                        isCompleted = isCompleted,
+                        onClick = {
+                            if (step.stepNumber <= currentStep.stepNumber) {
+                                onStepClick(step)
+                            }
                         }
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-
-                if (index < steps.size - 1) {
-                    Box(
-                        modifier = Modifier
-                            .width(12.dp)
-                            .height(2.dp)
-                            .background(
-                                if (step.stepNumber < currentStep.stepNumber) Emerald500
-                                else Slate200
-                            )
                     )
+
+                    if (index < steps.size - 1) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp)
+                                .height(2.dp)
+                                .background(
+                                    if (step.stepNumber < currentStep.stepNumber) Emerald600
+                                    else Slate200
+                                )
+                        )
+                    }
                 }
             }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Slate200)
+            )
         }
     }
 }
@@ -95,21 +100,21 @@ private fun StepIndicatorItem(
     Column(
         modifier = modifier.clickable(enabled = isCompleted, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         val circleBg = when {
             isCompleted -> Emerald600
             isCurrent -> Blue600
-            else -> Slate100
+            else -> Slate200
         }
         val circleTextColor = when {
             isCompleted || isCurrent -> Color.White
-            else -> Slate500
+            else -> Slate600
         }
 
         Box(
             modifier = Modifier
-                .size(24.dp)
+                .size(28.dp)
                 .clip(CircleShape)
                 .background(circleBg),
             contentAlignment = Alignment.Center
@@ -117,25 +122,31 @@ private fun StepIndicatorItem(
             if (isCompleted) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = null,
+                    contentDescription = "Completed",
                     tint = Color.White,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             } else {
                 Text(
                     text = stepNumber.toString(),
                     color = circleTextColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
+                    fontSize = 12.sp
                 )
             }
         }
 
+        val labelColor = when {
+            isCompleted -> Emerald600
+            isCurrent -> Blue600
+            else -> Slate500
+        }
+
         Text(
             text = title,
-            fontSize = 10.sp,
-            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-            color = if (isCurrent) Slate900 else Slate500,
+            fontSize = 11.sp,
+            fontWeight = if (isCurrent || isCompleted) FontWeight.Bold else FontWeight.Medium,
+            color = labelColor,
             textAlign = TextAlign.Center,
             maxLines = 1,
             softWrap = false

@@ -23,27 +23,27 @@ import com.leads365.apk.ui.theme.*
 
 /**
  * A. Compact Top Header
- * Designed for mobile phones: avoids oversized hero banners, presents branding,
- * short title, concise explanation, and compact device/OS chips without horizontal clipping.
+ * Matching the HTML reference: dark navy background, compact LEADS365 logo tile,
+ * DIAGNOSTICS & SETUP badge, clean title, and compact device/OS chips.
  */
 @Composable
 fun AppHeaderCard(
     deviceModel: String,
-    androidVersion: String
+    androidVersion: String,
+    modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Navy900),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Slate900,
+        shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Row 1: Brand Logo + Name + Phase Tag
+            // Row 1: Logo + Brand + DIAGNOSTICS & SETUP badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -51,83 +51,79 @@ fun AppHeaderCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f, fill = false)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(BlueAccent),
+                            .size(28.dp)
+                            .background(Blue600, RoundedCornerShape(6.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PhoneInTalk,
-                            contentDescription = "Leads365 Logo",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+                        Text(
+                            text = "365",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
                         )
                     }
                     Text(
                         text = "LEADS365",
                         color = Color.White,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 16.sp,
-                        letterSpacing = 0.8.sp
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        letterSpacing = 0.5.sp
                     )
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Navy800,
-                    border = BorderStroke(1.dp, Navy700)
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF1E3A8A).copy(alpha = 0.8f),
+                    border = BorderStroke(1.dp, Color(0xFF1D4ED8))
                 ) {
                     Text(
                         text = "DIAGNOSTICS & SETUP",
                         color = Color(0xFF93C5FD),
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
             }
 
-            // Row 2: Short screen title
+            // Row 2: Title
             Text(
                 text = "Native Dialer Recording Setup",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 17.sp,
-                lineHeight = 22.sp
+                fontSize = 18.sp
             )
 
-            // Row 4: Device & OS info (flow-safe chips)
+            // Row 3: Device Badges
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Navy800,
-                    border = BorderStroke(1.dp, Navy700),
-                    modifier = Modifier.weight(1f, fill = false)
+                    shape = RoundedCornerShape(6.dp),
+                    color = Slate800,
+                    border = BorderStroke(1.dp, Slate700)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Smartphone,
                             contentDescription = null,
-                            tint = BlueAccent,
-                            modifier = Modifier.size(13.dp)
+                            tint = Color(0xFF60A5FA),
+                            modifier = Modifier.size(14.dp)
                         )
                         Text(
                             text = deviceModel.ifBlank { "Android Device" },
-                            color = Color.White,
-                            fontSize = 11.sp,
+                            color = Slate300,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1
                         )
@@ -135,25 +131,25 @@ fun AppHeaderCard(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Navy800,
-                    border = BorderStroke(1.dp, Navy700)
+                    shape = RoundedCornerShape(6.dp),
+                    color = Slate800,
+                    border = BorderStroke(1.dp, Slate700)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Android,
                             contentDescription = null,
-                            tint = TealSuccess,
-                            modifier = Modifier.size(13.dp)
+                            tint = Color(0xFF4ADE80),
+                            modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = androidVersion.ifBlank { "OS" },
-                            color = Color.White,
-                            fontSize = 11.sp,
+                            text = androidVersion.ifBlank { "Android" },
+                            color = Slate300,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1
                         )
@@ -409,12 +405,6 @@ fun PermissionChecklistCard(
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
             )
-            Text(
-                text = "Android requires explicit runtime permissions to detect call-end events and query recent call records.",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 15.sp
-            )
 
             // Primary Action Button when permissions are missing
             if (!allMandatoryGranted) {
@@ -512,13 +502,6 @@ private fun PermissionRow(item: PermissionItem) {
                     )
                 }
             }
-
-            Text(
-                text = item.rationale,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 15.sp
-            )
         }
     }
 }
@@ -557,12 +540,6 @@ fun RecordingAccessCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
-            )
-            Text(
-                text = "Select how Leads365 discovers stock dialer recordings on this phone manufacturer.",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 15.sp
             )
 
             // Responsive Method Selector: Stacked or 2-tab segmented control with comfortable touch height
@@ -653,13 +630,6 @@ fun RecordingAccessCard(
                             }
                         }
 
-                        Text(
-                            text = "Recommended for Samsung (/Recordings/Call), Xiaomi (/MIUI/sound_recorder/call_rec), Vivo and Oppo dialers. Persists across reboots.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 15.sp
-                        )
-
                         if (safUriString != null) {
                             Text(
                                 text = "Folder URI: ${PrivacyRedactor.redactFilename(safUriString)}",
@@ -740,27 +710,6 @@ fun RecordingAccessCard(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
-                        }
-
-                        Text(
-                            text = "Queries system audio content provider bounded to call timestamp (± 4 min). Zero folder setup needed if dialer writes to public media store.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 15.sp
-                        )
-
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = Color(0xFFF1F5F9),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Note: Google Phone dialers (Pixel, Motorola) isolate recordings in a private app sandbox and require Cloud Telephony Fallback (Phase 18).",
-                                fontSize = 10.sp,
-                                color = TextSecondaryLight,
-                                modifier = Modifier.padding(8.dp),
-                                lineHeight = 14.sp
-                            )
                         }
                     }
                 }

@@ -1,7 +1,10 @@
 package com.leads365.apk.ui.wizard
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -9,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,465 +50,370 @@ fun Step1Permissions(
     var pendingRationaleDescription by remember { mutableStateOf<String?>(null) }
     var pendingRationaleAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    Card(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+        // Section Heading
+        Text(
+            text = "Permissions & Onboarding Checklist",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = Slate900
+        )
+
+        // Compact Amber Warning Card when recording capability has not yet been verified
+        if (isRecordingVerified) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Emerald50,
+                border = BorderStroke(1.dp, Emerald200),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Emerald600,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "Recording Verified",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Emerald800
+                        )
+                        Text(
+                            text = "Audio recording capability verified with genuine dialer audio in Step 4.",
+                            fontSize = 11.sp,
+                            color = Emerald700
+                        )
+                    }
+                }
+            }
+        } else {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Amber50,
+                border = BorderStroke(1.dp, Amber200),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(Amber600),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "i",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "Recording not verified",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Amber900
+                        )
+                        Text(
+                            text = "Connecting a folder or granting permissions does not verify recording capability. Leads365 must complete a test call with a real dialer audio file in Step 4.",
+                            fontSize = 11.sp,
+                            color = Amber800,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // White Bordered Card containing permission / state rows
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color.White,
+            border = BorderStroke(1.dp, Slate200),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            // Screen Title
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Permissions & Onboarding Checklist",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy900,
-                    fontSize = 18.sp
-                )
-            }
-
-            // 1. Truthful Recording Verification Status Banner
-            if (isRecordingVerified) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFDCFCE7),
-                    border = BorderStroke(1.dp, Color(0xFFBBF7D0)),
-                    modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Row 1: Automatic call recording enabled
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onConfirmDialerRecording(!dialerRecordingConfirmed) },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(22.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = "Recording Verified",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color(0xFF15803D)
-                            )
-                        }
+                        Checkbox(
+                            checked = dialerRecordingConfirmed,
+                            onCheckedChange = { onConfirmDialerRecording(it) },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Emerald600,
+                                uncheckedColor = Slate400
+                            ),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "Automatic call recording enabled",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Slate900
+                        )
                     }
+                    StatusPill(
+                        statusText = if (dialerRecordingConfirmed) "Granted" else "Required",
+                        isGranted = dialerRecordingConfirmed
+                    )
                 }
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFFEF3C7),
-                    border = BorderStroke(1.dp, Color(0xFFFDE68A)),
-                    modifier = Modifier.fillMaxWidth()
+
+                HorizontalDivider(thickness = 1.dp, color = Slate200)
+
+                // Row 2: Phone State Access
+                val phoneStateItem = permissions.find { it.id == "perm_phone_state" }
+                val phoneStateGranted = phoneStateItem?.status == PermissionStatus.GRANTED
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            if (!phoneStateGranted) {
+                                pendingRationaleTitle = "Phone State Access"
+                                pendingRationaleDescription = "Leads365 needs to know when an incoming or outgoing phone call ends so it can look for a corresponding call recording.\n\nStrict Privacy Guarantee: Leads365 never accesses your microphone, audio streams, contacts, or SMS."
+                                pendingRationaleAction = onRequestPermissions
+                            }
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(22.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = "Recording not verified",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color(0xFF92400E)
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Phone State Access",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Slate900
+                    )
+                    StatusPill(
+                        statusText = when (phoneStateItem?.status) {
+                            PermissionStatus.GRANTED -> "Granted"
+                            PermissionStatus.RESTRICTED -> "Restricted"
+                            PermissionStatus.DENIED -> "Denied"
+                            else -> "Required"
+                        },
+                        isGranted = phoneStateGranted
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = Slate200)
+
+                // Row 3: Call Log Access
+                val callLogItem = permissions.find { it.id == "perm_call_log" }
+                val callLogGranted = callLogItem?.status == PermissionStatus.GRANTED
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            if (!callLogGranted) {
+                                pendingRationaleTitle = "Call Log Access"
+                                pendingRationaleDescription = "Leads365 inspects the recent call log to read the call duration, timestamp, and phone number to verify that the call matches a permitted test lead.\n\nStrict Privacy Guarantee: Calls with non-leads or contacts marked Do-Not-Record are ignored and never inspected for recordings."
+                                pendingRationaleAction = onRequestPermissions
+                            }
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Call Log Access",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Slate900
+                    )
+                    StatusPill(
+                        statusText = when (callLogItem?.status) {
+                            PermissionStatus.GRANTED -> "Granted"
+                            PermissionStatus.RESTRICTED -> "Restricted"
+                            PermissionStatus.DENIED -> "Denied"
+                            else -> "Required"
+                        },
+                        isGranted = callLogGranted
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = Slate200)
+
+                // Row 4: Storage Access Framework (SAF)
+                val safItem = permissions.find { it.id == "perm_saf_folder" }
+                val safGranted = safItem?.status == PermissionStatus.GRANTED
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Storage Access Framework (SAF)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Slate900
+                    )
+                    StatusPill(
+                        statusText = if (safGranted) "Granted" else "Step 2",
+                        isGranted = safGranted
+                    )
                 }
             }
+        }
 
-            // 2. Dialer Automatic Recording Confirmation Checkbox
+        // Action Buttons if required permissions need granting or retrying
+        if (anyRestrictedOrUnavailable) {
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = Color(0xFFF8FAFC),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                color = Amber50,
+                border = BorderStroke(1.dp, Amber200),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Text(
+                        text = "Permission restricted by system settings on $deviceModel. Tap below to enable Call Logs and Phone access in Android Settings.",
+                        fontSize = 11.sp,
+                        color = Amber800,
+                        lineHeight = 15.sp
+                    )
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Checkbox(
-                            checked = dialerRecordingConfirmed,
-                            onCheckedChange = { onConfirmDialerRecording(it) },
-                            colors = CheckboxDefaults.colors(checkedColor = Navy900)
-                        )
-                        Text(
-                            text = "Automatic call recording is enabled in my phone's dialer",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp,
-                            color = Navy900
-                        )
-                    }
-                }
-            }
-
-            // 3. Action-Needed Alert Banner
-            if (anyRestrictedOrUnavailable) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFFEF3C7),
-                    border = BorderStroke(1.dp, Color(0xFFFDE68A)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(18.dp))
-                            Text(
-                                text = "Platform Permission Restriction on $deviceModel",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Color(0xFF92400E)
-                            )
-                        }
-                        Text(
-                            text = "Call Log or Phone access is restricted by Android system or privacy settings. Tap 'Open Android Settings' below, select 'Permissions', and ensure 'Call logs' and 'Phone' are allowed.",
-                            fontSize = 11.sp,
-                            color = Color(0xFF92400E),
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-            } else if (mandatoryMissing) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFEFF6FF),
-                    border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = BlueAccent, modifier = Modifier.size(18.dp))
-                            Text(
-                                text = "Action Required",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Navy900
-                            )
-                        }
-                        Text(
-                            text = "Required Phone State or Call Log access is missing. Tap 'Grant Required Permissions' below to allow Leads365 to detect calls and verify recording matches.",
-                            fontSize = 11.sp,
-                            color = Navy900,
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFDCFCE7),
-                    border = BorderStroke(1.dp, Color(0xFFBBF7D0)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(20.dp))
-                        Text(
-                            text = "Required phone permissions are granted! You are ready to proceed.",
-                            color = Color(0xFF15803D),
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-
-            // 4. Checklist Items
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Section: Mandatory Phone Access
-                Text(
-                    text = "MANDATORY PHONE PERMISSIONS",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondaryLight
-                )
-
-                // Phone State
-                val phoneStateItem = permissions.find { it.id == "perm_phone_state" }
-                PermissionChecklistItem(
-                    title = "Phone State Access",
-                    reason = phoneStateItem?.rationale ?: "Detects when calls connect and disconnect without reading audio streams.",
-                    status = phoneStateItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = true,
-                    onActionClick = {
-                        pendingRationaleTitle = "Phone State Access"
-                        pendingRationaleDescription = "Leads365 needs to know when an incoming or outgoing phone call ends so it can look for a corresponding call recording.\n\nStrict Privacy Guarantee: Leads365 never accesses your microphone, audio streams, contacts, or SMS."
-                        pendingRationaleAction = onRequestPermissions
-                    }
-                )
-
-                // Call Log
-                val callLogItem = permissions.find { it.id == "perm_call_log" }
-                PermissionChecklistItem(
-                    title = "Call Log Access",
-                    reason = callLogItem?.rationale ?: "Queries call details (timestamp, duration, phone number) to verify against allowed leads.",
-                    status = callLogItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = true,
-                    onActionClick = {
-                        pendingRationaleTitle = "Call Log Access"
-                        pendingRationaleDescription = "Leads365 inspects the recent call log to read the call duration, timestamp, and phone number to verify that the call matches a permitted test lead.\n\nStrict Privacy Guarantee: Calls with non-leads or contacts marked Do-Not-Record are ignored and never inspected for recordings."
-                        pendingRationaleAction = onRequestPermissions
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Section: Recording Folder & Storage
-                Text(
-                    text = "RECORDING FOLDER & STORAGE",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondaryLight
-                )
-
-                val safItem = permissions.find { it.id == "perm_saf_folder" }
-                PermissionChecklistItem(
-                    title = "Storage Access Framework (SAF) Folder",
-                    reason = safItem?.rationale ?: "Persisted folder access where the phone dialer writes audio files.",
-                    status = safItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = false,
-                    badgeText = "Configured in Step 2"
-                )
-
-                val audioItem = permissions.find { it.id == "perm_audio_access" }
-                PermissionChecklistItem(
-                    title = "Media Audio Access (MediaStore)",
-                    reason = audioItem?.rationale ?: "Optional scanner fallback for dialers that save recordings to public media.",
-                    status = audioItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = false,
-                    onActionClick = {
-                        onRequestPermissions()
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Section: Optional App Settings
-                Text(
-                    text = "OPTIONAL SETTINGS",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondaryLight
-                )
-
-                val callPhoneItem = permissions.find { it.id == "perm_call_phone" }
-                PermissionChecklistItem(
-                    title = "Direct Calling (Optional)",
-                    reason = callPhoneItem?.rationale ?: "Allows one-tap calling from the app. If not granted, calls use the standard phone dialer with ACTION_DIAL.",
-                    status = callPhoneItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = false,
-                    actionButtonText = if (callPhoneItem?.status != PermissionStatus.GRANTED) "Grant" else null,
-                    onActionClick = {
-                        pendingRationaleTitle = "Direct Calling Permission"
-                        pendingRationaleDescription = "Allows Leads365 to initiate direct test calls to configured leads. If not granted, tapping Call will open your phone dialer instead."
-                        pendingRationaleAction = onRequestDirectCallPermission
-                    }
-                )
-
-                val notifItem = permissions.find { it.id == "perm_notifications" }
-                PermissionChecklistItem(
-                    title = "Notifications",
-                    reason = notifItem?.rationale ?: "Alerts the user when a test call is matched or when background observation completes.",
-                    status = notifItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = false,
-                    actionButtonText = if (notifItem?.status != PermissionStatus.GRANTED) "Grant" else null,
-                    onActionClick = {
-                        onRequestPermissions()
-                    }
-                )
-
-                val overlayItem = permissions.find { it.id == "perm_overlay" }
-                PermissionChecklistItem(
-                    title = "Caller Pop-up Window (Optional)",
-                    reason = overlayItem?.rationale ?: "Allows display of lead identification badges over incoming or outgoing calls.",
-                    status = overlayItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = false,
-                    actionButtonText = if (overlayItem?.status != PermissionStatus.GRANTED) "Configure" else null,
-                    onActionClick = onRequestOverlayPermission
-                )
-
-                val batteryOptItem = permissions.find { it.id == "perm_battery_opt" }
-                PermissionChecklistItem(
-                    title = "Background Execution / Battery (Optional)",
-                    reason = batteryOptItem?.rationale ?: "Prevents Android from stopping background call observation and delayed recording discovery.",
-                    status = batteryOptItem?.status ?: PermissionStatus.NOT_REQUESTED,
-                    isMandatory = false,
-                    actionButtonText = if (batteryOptItem?.status != PermissionStatus.GRANTED) "Configure" else null,
-                    onActionClick = onRequestBatteryOptimization
-                )
-            }
-
-            // 5. Action Buttons & Navigation Controls
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (canContinue) {
-                    // All mandatory permissions satisfied: Primary Continue button
-                    Button(
-                        onClick = onContinue,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Navy900)
-                    ) {
-                        Text(
-                            text = "Continue to Step 2 (Select Folder) →",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                } else {
-                    if (!mandatoryMissing && !dialerRecordingConfirmed) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFFEF3C7),
-                            border = BorderStroke(1.dp, Color(0xFFFDE68A)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(18.dp))
-                                Text(
-                                    text = "All required permissions are granted! Please check the box above confirming native call recording is enabled in your phone dialer to continue.",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF92400E)
-                                )
-                            }
-                        }
-                    } else if (anyRestrictedOrUnavailable) {
                         Button(
                             onClick = onOpenSettings,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp),
+                            modifier = Modifier.weight(1f).height(40.dp),
                             shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BlueAccent)
+                            colors = ButtonDefaults.buttonColors(containerColor = Slate900)
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Open Android Settings", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("Open Settings", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        OutlinedButton(
+                            onClick = onCheckAgain,
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    pendingRationaleTitle = "Required Phone Permissions"
-                                    pendingRationaleDescription = "Leads365 requires Phone State and Call Log access to observe when test calls finish and identify matches.\n\nStrict Privacy Guarantee: Strictly NO microphone recording, contacts access, or SMS inspection."
-                                    pendingRationaleAction = onRequestPermissions
-                                },
-                                modifier = Modifier.weight(1f).heightIn(min = 42.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Retry Dialog", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
-
-                            OutlinedButton(
-                                onClick = onCheckAgain,
-                                modifier = Modifier.weight(1f).heightIn(min = 42.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Check Again", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
+                            Text("Check Again", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
-                    } else {
+                    }
+                }
+            }
+        } else if (mandatoryMissing) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Blue50,
+                border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Required Phone State or Call Log access is missing. Tap below to grant access.",
+                        fontSize = 11.sp,
+                        color = Slate800,
+                        lineHeight = 15.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Button(
                             onClick = {
                                 pendingRationaleTitle = "Required Phone Permissions"
                                 pendingRationaleDescription = "Leads365 requires Phone State and Call Log access to observe when test calls finish and identify matches.\n\nStrict Privacy Guarantee: Strictly NO microphone recording, contacts access, or SMS inspection."
                                 pendingRationaleAction = onRequestPermissions
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp),
+                            modifier = Modifier.weight(1f).height(40.dp),
                             shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BlueAccent)
+                            colors = ButtonDefaults.buttonColors(containerColor = Slate900)
                         ) {
-                            Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Grant Required Permissions", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("Grant Permissions", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        OutlinedButton(
+                            onClick = onCheckAgain,
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = onOpenSettings,
-                                modifier = Modifier.weight(1f).heightIn(min = 42.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Open Settings", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
-
-                            OutlinedButton(
-                                onClick = onCheckAgain,
-                                modifier = Modifier.weight(1f).heightIn(min = 42.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Check Again", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
+                            Text("Check Again", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
-                    }
-
-                    // Disabled Continue Button with Clear Explanation
-                    Button(
-                        onClick = { /* Disabled */ },
-                        enabled = false,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 44.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            disabledContainerColor = Color(0xFFE2E8F0),
-                            disabledContentColor = Color(0xFF94A3B8)
-                        )
-                    ) {
-                        Text(
-                            text = "Grant Phone State and Call Log access to continue",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
                     }
                 }
             }
+        } else if (!dialerRecordingConfirmed) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Amber50,
+                border = BorderStroke(1.dp, Amber200),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = Amber700,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Please check 'Automatic call recording enabled' above to proceed.",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Amber900
+                    )
+                }
+            }
+        }
+
+        // Continue Button: Full-width Emerald Button
+        Button(
+            onClick = onContinue,
+            enabled = canContinue,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Emerald800,
+                disabledContainerColor = Slate200,
+                disabledContentColor = Slate500
+            )
+        ) {
+            Text(
+                text = "Continue to Step 2 (Select Folder) →",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (canContinue) Color.White else Slate500
+            )
         }
     }
 
@@ -517,7 +426,7 @@ fun Step1Permissions(
                 pendingRationaleAction = null
             },
             icon = {
-                Icon(Icons.Default.Security, contentDescription = null, tint = BlueAccent)
+                Icon(Icons.Default.Security, contentDescription = null, tint = Blue600)
             },
             title = {
                 Text(
@@ -543,7 +452,7 @@ fun Step1Permissions(
                         pendingRationaleAction = null
                         action?.invoke()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Navy900)
+                    colors = ButtonDefaults.buttonColors(containerColor = Slate900)
                 ) {
                     Text("Proceed to Android Prompt")
                 }
@@ -564,118 +473,25 @@ fun Step1Permissions(
 }
 
 @Composable
-private fun PermissionChecklistItem(
-    title: String,
-    reason: String,
-    status: PermissionStatus,
-    isMandatory: Boolean,
-    badgeText: String? = null,
-    actionButtonText: String? = null,
-    onActionClick: (() -> Unit)? = null
+private fun StatusPill(
+    statusText: String,
+    isGranted: Boolean,
+    modifier: Modifier = Modifier
 ) {
+    val bg = if (isGranted) Color(0xFFDCFCE7) else Color(0xFFFEF3C7)
+    val fg = if (isGranted) Color(0xFF15803D) else Color(0xFFB45309)
+
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        shape = RoundedCornerShape(4.dp),
+        color = bg,
+        modifier = modifier
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    Text(
-                        text = title,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (isMandatory) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFFEE2E2)
-                        ) {
-                            Text(
-                                text = "Required",
-                                fontSize = 9.sp,
-                                color = RedDanger,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    } else if (badgeText != null) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFF1F5F9)
-                        ) {
-                            Text(
-                                text = badgeText,
-                                fontSize = 9.sp,
-                                color = TextSecondaryLight,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val (chipBg, chipFg, chipText) = when (status) {
-                        PermissionStatus.GRANTED -> Triple(Color(0xFFDCFCE7), Color(0xFF15803D), "Granted")
-                        PermissionStatus.NOT_GRANTED -> Triple(Color(0xFFFEE2E2), RedDanger, "Not Granted")
-                        PermissionStatus.DENIED -> Triple(Color(0xFFFEE2E2), RedDanger, "Denied")
-                        PermissionStatus.RESTRICTED -> Triple(Color(0xFFFEF3C7), Color(0xFFB45309), "Restricted")
-                        PermissionStatus.UNAVAILABLE -> Triple(Color(0xFFFFEDD5), Color(0xFFC2410C), "Unavailable")
-                        PermissionStatus.ERROR -> Triple(Color(0xFFFEE2E2), RedDanger, "Error")
-                        PermissionStatus.NOT_REQUESTED -> Triple(Color(0xFFF1F5F9), TextSecondaryLight, "Pending")
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = chipBg
-                    ) {
-                        Text(
-                            text = chipText,
-                            color = chipFg,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    if (actionButtonText != null && onActionClick != null) {
-                        OutlinedButton(
-                            onClick = onActionClick,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(text = actionButtonText, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            Text(
-                text = reason,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 15.sp
-            )
-        }
+        Text(
+            text = statusText,
+            color = fg,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+        )
     }
 }

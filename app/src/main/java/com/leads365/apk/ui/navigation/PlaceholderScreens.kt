@@ -20,7 +20,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.LocalFireDepartment
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.VerifiedUser
 import com.leads365.apk.BuildConfig
 import com.leads365.apk.diagnostics.BackgroundHardeningHelper
 import com.leads365.apk.ui.theme.*
@@ -84,12 +99,25 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-        Text(
-            text = "App Settings & Environment",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = Navy900
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Settings & Diagnostics",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy900
+            )
+            IconButton(onClick = onOpenAppSettings) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "System Settings",
+                    tint = Slate600
+                )
+            }
+        }
 
         // Agent Account & Session Card
         Card(
@@ -438,7 +466,8 @@ fun SettingsScreen(
                             DiagnosticItemRow(
                                 item = item,
                                 onRequestPermissions = onRequestPermissions,
-                                onOpenAppSettings = onOpenAppSettings
+                                onOpenAppSettings = onOpenAppSettings,
+                                onNavigateToPrivacy = onNavigateToPrivacy
                             )
                         }
                     }
@@ -535,33 +564,6 @@ fun SettingsScreen(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                }
-
-                Text(
-                    text = "Device: ${assessment.deviceModel}",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp,
-                    color = Slate900
-                )
-
-                Text(
-                    text = assessment.actionableGuidance,
-                    color = TextSecondaryLight,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
-
-                Surface(
-                    color = BlueAccent.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Verified status: ${assessment.verifiedByApp}",
-                        fontSize = 11.sp,
-                        color = Navy900,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                    )
                 }
 
                 Row(
@@ -684,114 +686,159 @@ private fun DiagnosticSummaryBadge(
 private fun DiagnosticItemRow(
     item: com.leads365.apk.diagnostics.DiagnosticItem,
     onRequestPermissions: () -> Unit = {},
-    onOpenAppSettings: () -> Unit = {}
+    onOpenAppSettings: () -> Unit = {},
+    onNavigateToPrivacy: () -> Unit = {}
 ) {
-    val statusColor = when (item.status) {
-        com.leads365.apk.diagnostics.DiagnosticStatus.PASS -> Emerald600
-        com.leads365.apk.diagnostics.DiagnosticStatus.WARNING -> Amber600
-        com.leads365.apk.diagnostics.DiagnosticStatus.FAIL -> Red600
-        com.leads365.apk.diagnostics.DiagnosticStatus.NOT_TESTED -> Slate500
+    val (statusBg, statusFg) = when (item.status) {
+        com.leads365.apk.diagnostics.DiagnosticStatus.PASS -> Pair(Emerald50, Emerald600)
+        com.leads365.apk.diagnostics.DiagnosticStatus.WARNING -> Pair(Amber50, Amber600)
+        com.leads365.apk.diagnostics.DiagnosticStatus.FAIL -> Pair(Red50, Red600)
+        com.leads365.apk.diagnostics.DiagnosticStatus.NOT_TESTED -> Pair(Slate100, Slate500)
     }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = Slate50,
-        border = BorderStroke(1.dp, Slate200.copy(alpha = 0.7f))
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, Slate200.copy(alpha = 0.8f))
     ) {
         Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Blue50
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = getDiagnosticIcon(item.id),
+                            contentDescription = null,
+                            tint = Blue600,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
                 Text(
                     text = item.title,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = Slate900,
                     modifier = Modifier.weight(1f)
                 )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
                 Surface(
-                    color = statusColor.copy(alpha = 0.12f),
+                    color = statusBg,
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
                         text = item.status.name,
-                        color = statusColor,
+                        color = statusFg,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = Slate400,
+                    modifier = Modifier.size(16.dp)
+                )
             }
 
-            Text(
-                text = item.summary,
-                fontSize = 11.sp,
-                color = Slate500,
-                lineHeight = 15.sp
-            )
-
-            if (!item.actionableStep.isNullOrBlank()) {
-                Surface(
-                    color = Color(0xFFF59E0B).copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.fillMaxWidth()
+            // Real functional action buttons ONLY when action is needed
+            if (item.id == "diag_battery_opt" && item.status != com.leads365.apk.diagnostics.DiagnosticStatus.PASS) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Column(
-                        modifier = Modifier.padding(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Button(
+                        onClick = {
+                            com.leads365.apk.diagnostics.BackgroundHardeningHelper.launchSafeSystemSettings(context)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Blue600),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.heightIn(min = 32.dp)
                     ) {
-                        Text(
-                            text = "Next Step: ${item.actionableStep}",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFD97706)
-                        )
-                        if (item.id == "diag_battery_opt") {
-                            val context = androidx.compose.ui.platform.LocalContext.current
-                            Button(
-                                onClick = {
-                                    com.leads365.apk.diagnostics.BackgroundHardeningHelper.launchSafeSystemSettings(context)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.align(Alignment.End)
-                            ) {
-                                Text("Open Battery Settings", fontSize = 10.sp, color = Color.White)
-                            }
-                        } else if (item.id == "diag_call_detection" || item.id == "diag_telephony") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Button(
-                                    onClick = onRequestPermissions,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.heightIn(min = 32.dp)
-                                ) {
-                                    Text("Grant Permissions", fontSize = 11.sp, color = Color.White)
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                OutlinedButton(
-                                    onClick = onOpenAppSettings,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.heightIn(min = 32.dp)
-                                ) {
-                                    Text("App Settings", fontSize = 11.sp)
-                                }
-                            }
-                        }
+                        Text("Manage Battery Settings", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            } else if (item.id == "diag_privacy_policy" && item.status != com.leads365.apk.diagnostics.DiagnosticStatus.PASS) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = onNavigateToPrivacy,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Blue600),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.heightIn(min = 32.dp)
+                    ) {
+                        Text("Review Privacy Policy", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Blue600)
+                    }
+                }
+            } else if ((item.id == "diag_call_detection" || item.id == "diag_telephony") && item.status != com.leads365.apk.diagnostics.DiagnosticStatus.PASS) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = onRequestPermissions,
+                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.heightIn(min = 32.dp)
+                    ) {
+                        Text("Grant Permissions", fontSize = 11.sp, color = Color.White)
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    OutlinedButton(
+                        onClick = onOpenAppSettings,
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.heightIn(min = 32.dp)
+                    ) {
+                        Text("App Settings", fontSize = 11.sp)
                     }
                 }
             }
         }
+    }
+}
+
+private fun getDiagnosticIcon(id: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (id) {
+        "diag_notifications" -> androidx.compose.material.icons.Icons.Outlined.Notifications
+        "diag_caller_overlay" -> androidx.compose.material.icons.Icons.Outlined.PhoneAndroid
+        "diag_call_detection", "diag_telephony" -> androidx.compose.material.icons.Icons.Outlined.Phone
+        "diag_recording_storage", "diag_saf_storage" -> androidx.compose.material.icons.Icons.Outlined.Folder
+        "diag_battery_opt" -> androidx.compose.material.icons.Icons.Outlined.BatteryAlert
+        "diag_auth_session" -> androidx.compose.material.icons.Icons.Outlined.Shield
+        "diag_lead_sync" -> androidx.compose.material.icons.Icons.Outlined.People
+        "diag_upload_queue" -> androidx.compose.material.icons.Icons.Outlined.Cloud
+        "diag_privacy_policy" -> androidx.compose.material.icons.Icons.Outlined.VerifiedUser
+        "diag_fcm" -> androidx.compose.material.icons.Icons.Outlined.LocalFireDepartment
+        "diag_architecture" -> androidx.compose.material.icons.Icons.Outlined.Code
+        "diag_disk_storage" -> androidx.compose.material.icons.Icons.Outlined.Storage
+        else -> androidx.compose.material.icons.Icons.Outlined.CheckCircle
     }
 }
 
