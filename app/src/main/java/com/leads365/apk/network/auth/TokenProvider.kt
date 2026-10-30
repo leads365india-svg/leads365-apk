@@ -8,11 +8,15 @@ interface TokenProvider {
     fun getRefreshToken(): String?
     fun saveTokens(accessToken: String, refreshToken: String)
     fun clearTokens()
+    fun getDeviceIdOrInstallId(): String? = null
+    fun getAgencyAccountId(): String? = null
 }
 
 class InMemoryTokenProvider(
     private var accessToken: String? = null,
-    private var refreshToken: String? = null
+    private var refreshToken: String? = null,
+    private var deviceIdOrInstallId: String? = null,
+    private var agencyAccountId: String? = null
 ) : TokenProvider {
 
     override fun getAccessToken(): String? = accessToken
@@ -27,6 +31,18 @@ class InMemoryTokenProvider(
     override fun clearTokens() {
         this.accessToken = null
         this.refreshToken = null
+    }
+
+    override fun getDeviceIdOrInstallId(): String? = deviceIdOrInstallId
+
+    override fun getAgencyAccountId(): String? = agencyAccountId
+
+    fun setDeviceIdOrInstallId(id: String?) {
+        this.deviceIdOrInstallId = id
+    }
+
+    fun setAgencyAccountId(id: String?) {
+        this.agencyAccountId = id
     }
 }
 
@@ -56,9 +72,15 @@ class SharedPreferencesTokenProvider(
             .apply()
     }
 
+    override fun getDeviceIdOrInstallId(): String? = prefs.getString(KEY_INSTALL_ID, null)
+
+    override fun getAgencyAccountId(): String? = prefs.getString(KEY_AGENCY_ACCOUNT_ID, null)
+
     companion object {
         private const val PREFS_NAME = "leads365_auth_tokens"
         private const val KEY_ACCESS_TOKEN = "key_access_token"
         private const val KEY_REFRESH_TOKEN = "key_refresh_token"
+        private const val KEY_INSTALL_ID = "key_install_id"
+        private const val KEY_AGENCY_ACCOUNT_ID = "key_agency_account_id"
     }
 }

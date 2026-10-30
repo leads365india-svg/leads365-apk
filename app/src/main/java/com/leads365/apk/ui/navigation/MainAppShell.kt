@@ -212,6 +212,7 @@ fun MainAppShell(
                         modifier = Modifier
                             .fillMaxWidth()
                             .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                            .consumeWindowInsets(WindowInsets.statusBars.only(WindowInsetsSides.Top))
                             .padding(horizontal = 14.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween

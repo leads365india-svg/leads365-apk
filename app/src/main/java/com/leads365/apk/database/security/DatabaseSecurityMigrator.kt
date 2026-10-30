@@ -147,7 +147,8 @@ object DatabaseSecurityMigrator {
                 .addMigrations(
                     Leads365Database.MIGRATION_1_2,
                     Leads365Database.MIGRATION_2_3,
-                    Leads365Database.MIGRATION_3_4
+                    Leads365Database.MIGRATION_3_4,
+                    Leads365Database.MIGRATION_4_5
                 )
                 .allowMainThreadQueries()
 
@@ -400,6 +401,7 @@ object DatabaseSecurityMigrator {
             val priorityIdx = cursor.getColumnIndex("priority")
             val notesIdx = cursor.getColumnIndex("notes")
             val assignedIdx = cursor.getColumnIndex("assignedTo")
+            val sourceCallIdIdx = cursor.getColumnIndex("sourceCallId")
             val syncStatusIdx = cursor.getColumnIndex("syncStatus")
             val updatedIdx = cursor.getColumnIndex("updatedAtEpochMs")
 
@@ -417,6 +419,7 @@ object DatabaseSecurityMigrator {
                         priority = if (priorityIdx != -1 && !cursor.isNull(priorityIdx)) cursor.getString(priorityIdx) else FollowUpEntity.PRIORITY_MEDIUM,
                         notes = if (notesIdx != -1 && !cursor.isNull(notesIdx)) cursor.getString(notesIdx) else "",
                         assignedTo = if (assignedIdx != -1 && !cursor.isNull(assignedIdx)) cursor.getString(assignedIdx) else "",
+                        sourceCallId = if (sourceCallIdIdx != -1 && !cursor.isNull(sourceCallIdIdx)) cursor.getString(sourceCallIdIdx) else null,
                         syncStatus = if (syncStatusIdx != -1 && !cursor.isNull(syncStatusIdx)) cursor.getString(syncStatusIdx) else FollowUpEntity.SYNC_STATUS_SYNCED,
                         updatedAtEpochMs = if (updatedIdx != -1 && !cursor.isNull(updatedIdx)) cursor.getLong(updatedIdx) else System.currentTimeMillis()
                     )

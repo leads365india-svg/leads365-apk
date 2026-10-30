@@ -38,7 +38,7 @@ fun WizardStepBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -68,7 +68,7 @@ fun WizardStepBar(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(horizontal = 8.dp)
+                                .padding(horizontal = 4.dp)
                                 .height(2.dp)
                                 .background(
                                     if (step.stepNumber < currentStep.stepNumber) Emerald600
@@ -100,7 +100,7 @@ private fun StepIndicatorItem(
     Column(
         modifier = modifier.clickable(enabled = isCompleted, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         val circleBg = when {
             isCompleted -> Emerald600
@@ -114,7 +114,7 @@ private fun StepIndicatorItem(
 
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(24.dp)
                 .clip(CircleShape)
                 .background(circleBg),
             contentAlignment = Alignment.Center
@@ -124,14 +124,14 @@ private fun StepIndicatorItem(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Completed",
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             } else {
                 Text(
                     text = stepNumber.toString(),
                     color = circleTextColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
             }
         }
@@ -144,7 +144,7 @@ private fun StepIndicatorItem(
 
         Text(
             text = title,
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = if (isCurrent || isCompleted) FontWeight.Bold else FontWeight.Medium,
             color = labelColor,
             textAlign = TextAlign.Center,

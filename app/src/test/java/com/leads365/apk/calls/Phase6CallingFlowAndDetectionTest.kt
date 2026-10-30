@@ -87,10 +87,18 @@ class Phase6CallingFlowAndDetectionTest {
             dispatcher = Dispatchers.Unconfined
         )
 
+        val tokenProvider = com.leads365.apk.network.auth.InMemoryTokenProvider(
+            accessToken = "test_token",
+            refreshToken = "test_refresh",
+            deviceIdOrInstallId = "inst_test_01",
+            agencyAccountId = "tenant_test_01"
+        )
+
         callRepository = CallRepositoryImpl(
             callDao = callDao,
             callApiService = callApiService,
-            dispatcher = Dispatchers.Unconfined
+            dispatcher = Dispatchers.Unconfined,
+            tokenProvider = tokenProvider
         )
 
         pendingCallManager = PendingCallManager(context, normalizer)
@@ -100,7 +108,9 @@ class Phase6CallingFlowAndDetectionTest {
             leadRepository = leadRepository,
             callRepository = callRepository,
             pendingCallManager = pendingCallManager,
-            normalizer = normalizer
+            normalizer = normalizer,
+            recordingDiscoveryCoordinator = null,
+            tokenProvider = tokenProvider
         )
     }
 

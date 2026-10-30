@@ -9,7 +9,8 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["status"]),
         Index(value = ["scheduledAtEpochMs"]),
-        Index(value = ["leadId"])
+        Index(value = ["leadId"]),
+        Index(value = ["sourceCallId"])
     ]
 )
 data class FollowUpEntity(
@@ -25,6 +26,7 @@ data class FollowUpEntity(
     val priority: String = PRIORITY_MEDIUM,
     val notes: String = "",
     val assignedTo: String = "",
+    val sourceCallId: String? = null,
     val syncStatus: String = SYNC_STATUS_SYNCED,
     val updatedAtEpochMs: Long = System.currentTimeMillis()
 ) {

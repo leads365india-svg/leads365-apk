@@ -99,6 +99,20 @@ class EncryptedTokenProvider(
 
     fun getDeviceId(): String? = safeGetString(KEY_DEVICE_ID, null)
 
+    override fun getAgencyAccountId(): String? = safeGetString(KEY_AGENCY_ACCOUNT_ID, null)
+
+    fun getOrCreateInstallId(): String {
+        val existing = safeGetString(KEY_INSTALL_ID, null)
+        if (!existing.isNullOrBlank()) return existing
+        val newId = "inst_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
+        safeEdit {
+            putString(KEY_INSTALL_ID, newId)
+        }
+        return newId
+    }
+
+    override fun getDeviceIdOrInstallId(): String = getDeviceId() ?: getOrCreateInstallId()
+
     fun saveFcmToken(token: String) {
         safeEdit {
             putString(KEY_FCM_TOKEN, token)
@@ -136,9 +150,21 @@ class EncryptedTokenProvider(
             remove(KEY_AGENCY_ACCOUNT_ID)
             remove(KEY_DEVICE_ID)
             remove(KEY_FCM_TOKEN)
+            // KEY_INSTALL_ID is intentionally preserved across sessions
         }
         try {
-            context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+            val fallback = context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)
+            fallback.edit()
+                .remove(KEY_ACCESS_TOKEN)
+                .remove(KEY_REFRESH_TOKEN)
+                .remove(KEY_USER_ID)
+                .remove(KEY_USER_NAME)
+                .remove(KEY_USER_EMAIL)
+                .remove(KEY_AGENCY_NAME)
+                .remove(KEY_AGENCY_ACCOUNT_ID)
+                .remove(KEY_DEVICE_ID)
+                .remove(KEY_FCM_TOKEN)
+                .apply()
         } catch (ignored: Exception) {}
     }
 
@@ -153,6 +179,7 @@ class EncryptedTokenProvider(
         private const val KEY_AGENCY_NAME = "key_agency_name"
         private const val KEY_AGENCY_ACCOUNT_ID = "key_agency_account_id"
         private const val KEY_DEVICE_ID = "key_device_id"
+        private const val KEY_INSTALL_ID = "key_install_id"
         private const val KEY_FCM_TOKEN = "key_fcm_token"
     }
 }

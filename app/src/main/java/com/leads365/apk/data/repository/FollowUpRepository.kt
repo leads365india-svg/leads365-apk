@@ -23,7 +23,8 @@ interface FollowUpRepository {
         title: String,
         scheduledAtEpochMs: Long,
         priority: String = FollowUpEntity.PRIORITY_MEDIUM,
-        notes: String = ""
+        notes: String = "",
+        sourceCallId: String? = null
     ): AppResult<FollowUpEntity>
 
     suspend fun completeFollowUp(

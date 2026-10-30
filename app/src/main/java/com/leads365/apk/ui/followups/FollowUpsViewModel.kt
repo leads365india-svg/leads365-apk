@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.util.TimeZone
 import javax.inject.Inject
 
 enum class FollowUpTab {
@@ -37,18 +38,8 @@ class FollowUpsViewModel @Inject constructor(
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     val followUpsState = followUpRepository.getPendingFollowUpsFlow()
-        .combine(_selectedTab) { list, tab ->
-            val now = System.currentTimeMillis()
-            val (startOfToday, endOfToday) = getDayBounds()
-
-            val today = list.filter { it.scheduledAtEpochMs in startOfToday..endOfToday }
-                .sortedBy { it.scheduledAtEpochMs }
-            val upcoming = list.filter { it.scheduledAtEpochMs > endOfToday }
-                .sortedBy { it.scheduledAtEpochMs }
-            val overdue = list.filter { it.scheduledAtEpochMs < now && it.scheduledAtEpochMs < startOfToday }
-                .sortedBy { it.scheduledAtEpochMs }
-
-            Triple(today, upcoming, overdue)
+        .combine(_selectedTab) { list, _ ->
+            categorize(list)
         }.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
@@ -113,20 +104,69 @@ class FollowUpsViewModel @Inject constructor(
         }
     }
 
-    private fun getDayBounds(): Pair<Long, Long> {
-        val cal = Calendar.getInstance()
-        cal.set(Calendar.HOUR_OF_DAY, 0)
-        cal.set(Calendar.MINUTE, 0)
-        cal.set(Calendar.SECOND, 0)
-        cal.set(Calendar.MILLISECOND, 0)
-        val startOfToday = cal.timeInMillis
+    companion object {
+        /**
+         * Mutually exclusive, partition-safe pending follow-up categorization.
+         *
+         * - Overdue: scheduled time is strictly before current time (< now).
+         * - Today: scheduled time is from current time through end of today (now <= scheduled <= endOfToday).
+         * - Upcoming: scheduled time is strictly after end of today (> endOfToday).
+         * - Completed/cancelled reminders must never appear in pending categories.
+         *
+         * Guarantees:
+         * 1. Every pending reminder belongs to EXACTLY one category tab.
+         * 2. Non-pending (completed, cancelled) are filtered out completely.
+         * 3. Uses consistent timezone and day boundaries.
+         */
+        fun categorize(
+            list: List<FollowUpEntity>,
+            now: Long = System.currentTimeMillis(),
+            timeZone: TimeZone = TimeZone.getDefault()
+        ): Triple<List<FollowUpEntity>, List<FollowUpEntity>, List<FollowUpEntity>> {
+            val (_, endOfToday) = getDayBounds(now, timeZone)
 
-        cal.set(Calendar.HOUR_OF_DAY, 23)
-        cal.set(Calendar.MINUTE, 59)
-        cal.set(Calendar.SECOND, 59)
-        cal.set(Calendar.MILLISECOND, 999)
-        val endOfToday = cal.timeInMillis
+            // Completed or cancelled reminders must never appear in pending categories
+            val pending = list.filter { it.status == FollowUpEntity.STATUS_PENDING }
 
-        return Pair(startOfToday, endOfToday)
+            val overdue = pending.filter { it.scheduledAtEpochMs < now }
+                .sortedBy { it.scheduledAtEpochMs }
+
+            val today = pending.filter { it.scheduledAtEpochMs in now..endOfToday }
+                .sortedBy { it.scheduledAtEpochMs }
+
+            val upcoming = pending.filter { it.scheduledAtEpochMs > endOfToday }
+                .sortedBy { it.scheduledAtEpochMs }
+
+            return Triple(today, upcoming, overdue)
+        }
+
+        fun getDayBounds(
+            epochMs: Long = System.currentTimeMillis(),
+            timeZone: TimeZone = TimeZone.getDefault()
+        ): Pair<Long, Long> {
+            val cal = Calendar.getInstance(timeZone).apply {
+                timeInMillis = epochMs
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val startOfToday = cal.timeInMillis
+
+            cal.set(Calendar.HOUR_OF_DAY, 23)
+            cal.set(Calendar.MINUTE, 59)
+            cal.set(Calendar.SECOND, 59)
+            cal.set(Calendar.MILLISECOND, 999)
+            val endOfToday = cal.timeInMillis
+
+            return Pair(startOfToday, endOfToday)
+        }
+
+        fun isOverdue(
+            item: FollowUpEntity,
+            now: Long = System.currentTimeMillis()
+        ): Boolean {
+            return item.status == FollowUpEntity.STATUS_PENDING && item.scheduledAtEpochMs < now
+        }
     }
 }

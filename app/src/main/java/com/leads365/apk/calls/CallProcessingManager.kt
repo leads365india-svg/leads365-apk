@@ -14,6 +14,7 @@ import com.leads365.apk.database.entity.CallEntity
 import com.leads365.apk.database.entity.LeadEntity
 import com.leads365.apk.recordings.DiscoveryResult
 import com.leads365.apk.recordings.RecordingDiscoveryCoordinator
+import com.leads365.apk.network.auth.TokenProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -45,10 +46,28 @@ class CallProcessingManager(
     private val pendingCallManager: PendingCallManager,
     private val normalizer: PhoneNumberNormalizer,
     private val recordingDiscoveryCoordinator: RecordingDiscoveryCoordinator?,
+    private val tokenProvider: TokenProvider? = null,
     @Suppress("UNUSED_PARAMETER") dummy: Unit = Unit
 ) {
 
     @Inject
+    constructor(
+        leadRepository: LeadRepository,
+        callRepository: CallRepository,
+        pendingCallManager: PendingCallManager,
+        normalizer: PhoneNumberNormalizer,
+        recordingDiscoveryCoordinator: RecordingDiscoveryCoordinator,
+        tokenProvider: TokenProvider
+    ) : this(
+        leadRepository = leadRepository,
+        callRepository = callRepository,
+        pendingCallManager = pendingCallManager,
+        normalizer = normalizer,
+        recordingDiscoveryCoordinator = recordingDiscoveryCoordinator,
+        tokenProvider = tokenProvider,
+        dummy = Unit
+    )
+
     constructor(
         leadRepository: LeadRepository,
         callRepository: CallRepository,
@@ -61,6 +80,7 @@ class CallProcessingManager(
         pendingCallManager = pendingCallManager,
         normalizer = normalizer,
         recordingDiscoveryCoordinator = recordingDiscoveryCoordinator,
+        tokenProvider = null,
         dummy = Unit
     )
 
@@ -75,6 +95,7 @@ class CallProcessingManager(
         pendingCallManager = pendingCallManager,
         normalizer = normalizer,
         recordingDiscoveryCoordinator = null,
+        tokenProvider = null,
         dummy = Unit
     )
 
@@ -176,8 +197,35 @@ class CallProcessingManager(
             return CallProcessingResult.RejectedDoNotRecord(matchingLead)
         }
 
-        // 6. Persist Eligible Call to Room
-        val clientCallId = UUID.randomUUID().toString()
+        // 6. Persist Eligible Call to Room with canonical deterministic clientCallId
+        val rawNativeId = callEvent.id.trim()
+        val installId = tokenProvider?.getDeviceIdOrInstallId()?.trim()?.ifEmpty { null }
+        val tenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+
+        val hasRequiredIdentity = !tenantId.isNullOrBlank() && !installId.isNullOrBlank()
+        val phoneDigits = normalizer.extractLast10Digits(normalizedNumber).ifEmpty {
+            normalizedNumber.replace("[^0-9]".toRegex(), "")
+        }
+
+        val clientCallId = if (hasRequiredIdentity) {
+            if (rawNativeId.isNotBlank() && !rawNativeId.startsWith("call_")) {
+                "call_${tenantId}_${installId}_$rawNativeId"
+            } else {
+                "call_${tenantId}_${installId}_${phoneDigits}_${callEvent.startTimeEpochMs}"
+            }
+        } else {
+            // Unsafe identity placeholders like "dev" or "default" are NEVER used.
+            // Safely defer call sync until identity is available while preserving the call locally.
+            val localKey = if (rawNativeId.isNotBlank() && !rawNativeId.startsWith("call_")) {
+                rawNativeId
+            } else {
+                "${phoneDigits}_${callEvent.startTimeEpochMs}"
+            }
+            "local_pending_call_$localKey"
+        }
+
+        val syncStatus = if (hasRequiredIdentity) "PENDING" else "DEFERRED_IDENTITY"
+
         val callType = when (callEvent.direction) {
             CallDirection.INCOMING -> CallLog.Calls.INCOMING_TYPE
             CallDirection.OUTGOING -> CallLog.Calls.OUTGOING_TYPE
@@ -200,7 +248,7 @@ class CallProcessingManager(
             notes = if (isUnlinkedInbound) "Unlinked incoming call (Website Call attribution unverified)" else null,
             simId = callEvent.simId,
             callOutcome = initialOutcome,
-            syncStatus = "PENDING",
+            syncStatus = syncStatus,
             hasRecording = false
         )
 

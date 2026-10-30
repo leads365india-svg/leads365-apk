@@ -129,7 +129,7 @@ class RecordingUploadWorker(
                 if (reportResult is AppResult.Failure) {
                     val errorMsg = reportResult.error.message ?: "Failed to report call to backend before recording upload"
                     Log.w(TAG, "Call pre-upload report failed for $targetCallId: $errorMsg")
-                    if (reportResult.error is com.leads365.apk.core.AppError.NetworkError) {
+                    if (reportResult.error is com.leads365.apk.core.AppError.NetworkError || reportResult.error is com.leads365.apk.core.AppError.AuthError) {
                         uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_RETRY_WAIT, errorMsg)
                         return@withContext Result.retry()
                     } else {

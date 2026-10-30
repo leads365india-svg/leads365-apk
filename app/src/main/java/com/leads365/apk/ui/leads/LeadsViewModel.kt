@@ -224,7 +224,8 @@ class LeadsViewModel @Inject constructor(
                             leadPhone = lead.normalizedNumber.ifBlank { lead.rawNumber },
                             title = "Follow-up ($outcome)",
                             scheduledAtEpochMs = nextFollowUpEpochMs,
-                            notes = notes ?: ""
+                            notes = notes ?: "",
+                            sourceCallId = callId
                         )
                     } catch (e: Exception) {
                         android.util.Log.w("LeadsViewModel", "Error auto-creating follow-up: ${e.message}")

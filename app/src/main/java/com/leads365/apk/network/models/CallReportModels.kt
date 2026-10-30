@@ -41,6 +41,8 @@ data class CallDto(
     @SerialName("outcome") val outcome: String? = null,
     @SerialName("notes") val notes: String? = null,
     @SerialName("simId") val simId: String? = null,
+    @SerialName("hasRecording") val hasRecording: Boolean = false,
+    @SerialName("recordingFileId") val recordingFileId: String? = null,
     @SerialName("isUnlinked") val isUnlinked: Boolean = false
 )
 

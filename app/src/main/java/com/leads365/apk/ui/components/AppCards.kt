@@ -40,8 +40,10 @@ fun AppHeaderCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                .consumeWindowInsets(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // Row 1: Logo + Brand + DIAGNOSTICS & SETUP badge
             Row(
@@ -51,26 +53,26 @@ fun AppHeaderCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
-                            .background(Blue600, RoundedCornerShape(6.dp)),
+                            .size(24.dp)
+                            .background(Blue600, RoundedCornerShape(5.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "365",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
+                            fontSize = 10.sp
                         )
                     }
                     Text(
                         text = "LEADS365",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         letterSpacing = 0.5.sp
                     )
                 }
@@ -83,76 +85,85 @@ fun AppHeaderCard(
                     Text(
                         text = "DIAGNOSTICS & SETUP",
                         color = Color(0xFF93C5FD),
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
             }
 
-            // Row 2: Title
-            Text(
-                text = "Native Dialer Recording Setup",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-
-            // Row 3: Device Badges
+            // Row 2: Title & Device Badges in balanced responsive layout
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = Slate800,
-                    border = BorderStroke(1.dp, Slate700)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Smartphone,
-                            contentDescription = null,
-                            tint = Color(0xFF60A5FA),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = deviceModel.ifBlank { "Android Device" },
-                            color = Slate300,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1
-                        )
-                    }
-                }
+                Text(
+                    text = "Native Dialer Recording Setup",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
 
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = Slate800,
-                    border = BorderStroke(1.dp, Slate700)
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Compact Device Badges
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Slate800,
+                        border = BorderStroke(1.dp, Slate700)
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Android,
-                            contentDescription = null,
-                            tint = Color(0xFF4ADE80),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = androidVersion.ifBlank { "Android" },
-                            color = Slate300,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Smartphone,
+                                contentDescription = null,
+                                tint = Color(0xFF60A5FA),
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = deviceModel.ifBlank { "Android" },
+                                color = Slate300,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Slate800,
+                        border = BorderStroke(1.dp, Slate700)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Android,
+                                contentDescription = null,
+                                tint = Emerald500,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = if (androidVersion.startsWith("Android")) androidVersion else "v$androidVersion",
+                                color = Slate300,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }

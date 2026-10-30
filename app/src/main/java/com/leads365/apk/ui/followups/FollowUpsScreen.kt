@@ -378,7 +378,7 @@ private fun FollowUpCard(
     val timeFormat = SimpleDateFormat("h:mm a, d MMM", Locale.getDefault())
     val formattedTime = timeFormat.format(Date(item.scheduledAtEpochMs))
 
-    val isOverdue = item.scheduledAtEpochMs < System.currentTimeMillis() && item.status == FollowUpEntity.STATUS_PENDING
+    val isOverdue = FollowUpsViewModel.isOverdue(item)
 
     Card(
         modifier = Modifier.fillMaxWidth(),

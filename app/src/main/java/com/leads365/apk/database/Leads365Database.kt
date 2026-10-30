@@ -21,7 +21,7 @@ import com.leads365.apk.database.entity.FollowUpEntity
         UploadTaskEntity::class,
         FollowUpEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class Leads365Database : RoomDatabase() {
@@ -89,6 +89,16 @@ abstract class Leads365Database : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_ups_status ON follow_ups(status)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_ups_scheduledAtEpochMs ON follow_ups(scheduledAtEpochMs)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_ups_leadId ON follow_ups(leadId)")
+            }
+        }
+
+        /**
+         * Migration from version 4 to version 5 adding sourceCallId to follow_ups
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE follow_ups ADD COLUMN sourceCallId TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_ups_sourceCallId ON follow_ups(sourceCallId)")
             }
         }
     }

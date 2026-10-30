@@ -16,17 +16,37 @@ import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import java.io.IOException
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
-class LeadRepositoryImpl @Inject constructor(
+class LeadRepositoryImpl(
     private val leadDao: LeadDao,
     private val leadApiService: LeadApiService,
     @ApplicationContext private val context: Context,
-    private val normalizer: PhoneNumberNormalizer
+    private val normalizer: PhoneNumberNormalizer,
+    private val callRepositoryProvider: Provider<CallRepository>? = null,
+    directCallRepository: CallRepository? = null
 ) : LeadRepository {
 
     private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private var callRepo: CallRepository? = directCallRepository
+
+    @Inject
+    constructor(
+        leadDao: LeadDao,
+        leadApiService: LeadApiService,
+        @ApplicationContext context: Context,
+        normalizer: PhoneNumberNormalizer,
+        callRepositoryProvider: Provider<CallRepository>
+    ) : this(leadDao, leadApiService, context, normalizer, callRepositoryProvider, null)
+
+    constructor(
+        leadDao: LeadDao,
+        leadApiService: LeadApiService,
+        context: Context,
+        normalizer: PhoneNumberNormalizer = PhoneNumberNormalizer("IN")
+    ) : this(leadDao, leadApiService, context, normalizer, null, null)
 
     constructor(
         leadDao: LeadDao,
@@ -34,7 +54,18 @@ class LeadRepositoryImpl @Inject constructor(
         context: Context,
         normalizer: PhoneNumberNormalizer = PhoneNumberNormalizer("IN"),
         dispatcher: CoroutineDispatcher
-    ) : this(leadDao, leadApiService, context, normalizer) {
+    ) : this(leadDao, leadApiService, context, normalizer, null, null) {
+        this.ioDispatcher = dispatcher
+    }
+
+    constructor(
+        leadDao: LeadDao,
+        leadApiService: LeadApiService,
+        context: Context,
+        normalizer: PhoneNumberNormalizer = PhoneNumberNormalizer("IN"),
+        dispatcher: CoroutineDispatcher,
+        callRepository: CallRepository?
+    ) : this(leadDao, leadApiService, context, normalizer, null, callRepository) {
         this.ioDispatcher = dispatcher
     }
 
@@ -74,6 +105,12 @@ class LeadRepositoryImpl @Inject constructor(
     override suspend fun saveLead(lead: LeadEntity): AppResult<Unit> = withContext(ioDispatcher) {
         try {
             leadDao.insert(lead)
+            try {
+                val repo = callRepo ?: callRepositoryProvider?.get()
+                repo?.reconcileCallsForLead(lead)
+            } catch (e: Exception) {
+                // Non-fatal reconciliation error
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Failure(AppError.StorageError("Failed to save lead: ${e.message}", e))
@@ -83,6 +120,16 @@ class LeadRepositoryImpl @Inject constructor(
     override suspend fun saveLeads(leads: List<LeadEntity>): AppResult<Unit> = withContext(ioDispatcher) {
         try {
             leadDao.insertAll(leads)
+            try {
+                val repo = callRepo ?: callRepositoryProvider?.get()
+                if (repo != null) {
+                    for (lead in leads) {
+                        repo.reconcileCallsForLead(lead)
+                    }
+                }
+            } catch (e: Exception) {
+                // Non-fatal reconciliation error
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Failure(AppError.StorageError("Failed to save leads list: ${e.message}", e))
@@ -166,6 +213,16 @@ class LeadRepositoryImpl @Inject constructor(
             // Insert or update leads
             if (leadEntities.isNotEmpty()) {
                 leadDao.insertAll(leadEntities)
+                try {
+                    val repo = callRepo ?: callRepositoryProvider?.get()
+                    if (repo != null) {
+                        for (lead in leadEntities) {
+                            repo.reconcileCallsForLead(lead)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Non-fatal reconciliation error during sync
+                }
             }
 
             val syncTime = response.serverTime

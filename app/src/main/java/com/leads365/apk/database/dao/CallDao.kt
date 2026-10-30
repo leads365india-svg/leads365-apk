@@ -33,6 +33,13 @@ interface CallDao {
     """)
     suspend fun findCallBySignature(normalizedNumber: String, minStartEpochMs: Long, maxStartEpochMs: Long): CallEntity?
 
+    @Query("""
+        SELECT * FROM calls 
+        WHERE normalizedNumber = :normalizedNumber 
+        AND startTimeEpochMs BETWEEN :minStartEpochMs AND :maxStartEpochMs
+    """)
+    suspend fun findCandidatesBySignature(normalizedNumber: String, minStartEpochMs: Long, maxStartEpochMs: Long): List<CallEntity>
+
     @Query("SELECT * FROM calls ORDER BY startTimeEpochMs DESC")
     fun getAllCallsFlow(): Flow<List<CallEntity>>
 
@@ -47,6 +54,21 @@ interface CallDao {
 
     @Query("SELECT * FROM calls WHERE syncStatus = 'PENDING' AND isLeadCall = 1 ORDER BY startTimeEpochMs ASC")
     suspend fun getPendingSyncCalls(): List<CallEntity>
+
+    @Query("""
+        SELECT * FROM calls 
+        WHERE (isLeadCall = 0 OR leadId IS NULL OR leadId = '') 
+        AND (normalizedNumber = :normalizedNumber OR rawNumber = :rawNumber OR rawNumber = :normalizedNumber OR normalizedNumber = :rawNumber)
+        ORDER BY startTimeEpochMs DESC
+    """)
+    suspend fun getUnassignedCallsForNumber(normalizedNumber: String, rawNumber: String): List<CallEntity>
+
+    @Query("""
+        UPDATE calls 
+        SET leadId = :leadId, isLeadCall = 1, syncStatus = :syncStatus 
+        WHERE id = :callId OR clientCallId = :callId
+    """)
+    suspend fun associateCallToLead(callId: String, leadId: String, syncStatus: String = "PENDING"): Int
 
     @Query("""
         UPDATE calls 

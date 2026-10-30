@@ -20,6 +20,18 @@ interface FollowUpDao {
     @Query("SELECT * FROM follow_ups WHERE id = :id")
     suspend fun getById(id: String): FollowUpEntity?
 
+    @Query("SELECT * FROM follow_ups WHERE sourceCallId = :sourceCallId LIMIT 1")
+    suspend fun getBySourceCallId(sourceCallId: String): FollowUpEntity?
+
+    @Query("""
+        SELECT * FROM follow_ups 
+        WHERE leadId = :leadId 
+        AND scheduledAtEpochMs BETWEEN :minTimeMs AND :maxTimeMs 
+        AND status = 'pending' 
+        LIMIT 1
+    """)
+    suspend fun findPendingByLeadAndTime(leadId: String, minTimeMs: Long, maxTimeMs: Long): FollowUpEntity?
+
     @Query("SELECT * FROM follow_ups WHERE leadId = :leadId ORDER BY scheduledAtEpochMs DESC")
     suspend fun getByLeadId(leadId: String): List<FollowUpEntity>
 

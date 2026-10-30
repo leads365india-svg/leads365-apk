@@ -19,6 +19,9 @@ interface CallRepository {
     suspend fun getPendingSyncCalls(): AppResult<List<CallEntity>>
     suspend fun reportCallToBackend(callId: String): AppResult<com.leads365.apk.network.models.CallReportResponse>
     suspend fun syncCallsFromBackend(): AppResult<Int> = AppResult.Success(0)
+    suspend fun getUnassignedCallsForNumber(normalizedNumber: String, rawNumber: String): AppResult<List<CallEntity>> = AppResult.Success(emptyList())
+    suspend fun associateCallToLead(callId: String, leadId: String): AppResult<Unit> = AppResult.Success(Unit)
+    suspend fun reconcileCallsForLead(lead: com.leads365.apk.database.entity.LeadEntity): AppResult<Int> = AppResult.Success(0)
     suspend fun deleteCallById(id: String): AppResult<Unit>
     suspend fun clearAll(): AppResult<Unit>
 }

@@ -53,11 +53,11 @@ class FollowUpRepositoryImpl @Inject constructor(
 
     override suspend fun getTodayFollowUps(): List<FollowUpEntity> {
         val now = System.currentTimeMillis()
-        val (startOfToday, endOfToday) = getDayBounds()
+        val (_, endOfToday) = getDayBounds()
         val allPending = followUpDao.getFollowUpsByStatusFlow(FollowUpEntity.STATUS_PENDING).first()
 
         return allPending.filter {
-            it.scheduledAtEpochMs in startOfToday..endOfToday
+            it.scheduledAtEpochMs in now..endOfToday
         }.sortedBy { it.scheduledAtEpochMs }
     }
 
@@ -86,11 +86,43 @@ class FollowUpRepositoryImpl @Inject constructor(
         title: String,
         scheduledAtEpochMs: Long,
         priority: String,
-        notes: String
+        notes: String,
+        sourceCallId: String?
     ): AppResult<FollowUpEntity> {
-        val localId = "fu_${UUID.randomUUID().toString().take(12)}"
         val resolvedTitle = if (title.isNotBlank()) title else "Call $leadName"
 
+        // Deduplication & idempotency check
+        val existingMatch = if (!sourceCallId.isNullOrBlank()) {
+            followUpDao.getBySourceCallId(sourceCallId)
+        } else if (!leadId.isNullOrBlank()) {
+            followUpDao.findPendingByLeadAndTime(leadId, scheduledAtEpochMs - 60000L, scheduledAtEpochMs + 60000L)
+        } else null
+
+        if (existingMatch != null) {
+            val updated = existingMatch.copy(
+                title = resolvedTitle,
+                notes = if (notes.isNotBlank()) notes else existingMatch.notes,
+                priority = priority,
+                scheduledAtEpochMs = scheduledAtEpochMs,
+                sourceCallId = sourceCallId ?: existingMatch.sourceCallId,
+                syncStatus = FollowUpEntity.SYNC_STATUS_PENDING_UPDATE,
+                updatedAtEpochMs = System.currentTimeMillis()
+            )
+            followUpDao.update(updated)
+            scheduleReminder(updated)
+            try {
+                val isoDate = isoFormat.format(Date(scheduledAtEpochMs))
+                followUpApiService.updateFollowUp(
+                    id = updated.id,
+                    request = UpdateFollowUpRequest(scheduledAt = isoDate, notes = updated.notes, priority = updated.priority)
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Offline update queued for deduplicated follow-up ${updated.id}")
+            }
+            return AppResult.Success(updated)
+        }
+
+        val localId = "fu_${UUID.randomUUID().toString().take(12)}"
         val entity = FollowUpEntity(
             id = localId,
             leadId = leadId,
@@ -102,6 +134,7 @@ class FollowUpRepositoryImpl @Inject constructor(
             status = FollowUpEntity.STATUS_PENDING,
             priority = priority,
             notes = notes,
+            sourceCallId = sourceCallId,
             syncStatus = FollowUpEntity.SYNC_STATUS_PENDING_CREATE,
             updatedAtEpochMs = System.currentTimeMillis()
         )
@@ -244,6 +277,7 @@ class FollowUpRepositoryImpl @Inject constructor(
                         priority = dto.priority,
                         notes = dto.notes,
                         assignedTo = dto.assignedTo,
+                        sourceCallId = dto.sourceCallId,
                         syncStatus = FollowUpEntity.SYNC_STATUS_SYNCED,
                         updatedAtEpochMs = System.currentTimeMillis()
                     )
@@ -257,6 +291,21 @@ class FollowUpRepositoryImpl @Inject constructor(
                     validRemoteIds.add(remoteEntity.id)
                     val local = localPendingMap[remoteEntity.id]
                     if (local == null) {
+                        // Check if we have an existing local record matching sourceCallId or (leadId + scheduledAt window +-60s)
+                        val existingMatch = if (!remoteEntity.sourceCallId.isNullOrBlank()) {
+                            followUpDao.getBySourceCallId(remoteEntity.sourceCallId)
+                        } else if (!remoteEntity.leadId.isNullOrBlank()) {
+                            followUpDao.findPendingByLeadAndTime(
+                                remoteEntity.leadId,
+                                remoteEntity.scheduledAtEpochMs - 60000L,
+                                remoteEntity.scheduledAtEpochMs + 60000L
+                            )
+                        } else null
+
+                        if (existingMatch != null && existingMatch.id != remoteEntity.id) {
+                            cancelReminder(existingMatch.id)
+                            followUpDao.deleteById(existingMatch.id)
+                        }
                         followUpDao.insert(remoteEntity)
                         scheduleReminder(remoteEntity)
                     }
@@ -287,7 +336,9 @@ class FollowUpRepositoryImpl @Inject constructor(
                     type = entity.type,
                     scheduledAt = isoDate,
                     priority = entity.priority,
-                    notes = entity.notes
+                    notes = entity.notes,
+                    sourceCallId = entity.sourceCallId,
+                    idempotencyKey = "fu_idemp_${entity.id}"
                 )
             )
 

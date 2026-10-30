@@ -12,25 +12,80 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import android.util.Log
+import com.leads365.apk.network.auth.TokenProvider
 import retrofit2.HttpException
 import java.io.IOException
+import android.content.Context
+import com.leads365.apk.database.dao.UploadTaskDao
+import com.leads365.apk.database.entity.UploadTaskEntity
+import com.leads365.apk.database.entity.LeadEntity
+import com.leads365.apk.recordings.DiscoveryResult
+import com.leads365.apk.recordings.RecordingDiscoveryCoordinator
+import com.leads365.apk.work.RecordingUploadWorker
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Provider
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class CallRepositoryImpl @Inject constructor(
+class CallRepositoryImpl(
     private val callDao: CallDao,
-    private val callApiService: CallApiService
+    private val callApiService: CallApiService,
+    private val tokenProvider: TokenProvider? = null,
+    private val uploadTaskDao: UploadTaskDao? = null,
+    private val recordingDiscoveryCoordinatorProvider: Provider<RecordingDiscoveryCoordinator>? = null,
+    private val context: Context? = null,
+    directCoordinator: RecordingDiscoveryCoordinator? = null
 ) : CallRepository {
 
     private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private var directRecordingDiscoveryCoordinator: RecordingDiscoveryCoordinator? = directCoordinator
+
+    @Inject
+    constructor(
+        callDao: CallDao,
+        callApiService: CallApiService,
+        tokenProvider: TokenProvider,
+        uploadTaskDao: UploadTaskDao,
+        recordingDiscoveryCoordinatorProvider: Provider<RecordingDiscoveryCoordinator>,
+        @ApplicationContext context: Context
+    ) : this(
+        callDao = callDao,
+        callApiService = callApiService,
+        tokenProvider = tokenProvider,
+        uploadTaskDao = uploadTaskDao,
+        recordingDiscoveryCoordinatorProvider = recordingDiscoveryCoordinatorProvider,
+        context = context,
+        directCoordinator = null
+    )
 
     constructor(
         callDao: CallDao,
         callApiService: CallApiService,
-        dispatcher: CoroutineDispatcher
-    ) : this(callDao, callApiService) {
+        tokenProvider: TokenProvider? = null
+    ) : this(callDao, callApiService, tokenProvider, null, null, null, null)
+
+    constructor(
+        callDao: CallDao,
+        callApiService: CallApiService,
+        dispatcher: CoroutineDispatcher,
+        tokenProvider: TokenProvider? = null
+    ) : this(callDao, callApiService, tokenProvider, null, null, null, null) {
         this.ioDispatcher = dispatcher
+    }
+
+    constructor(
+        callDao: CallDao,
+        callApiService: CallApiService,
+        dispatcher: CoroutineDispatcher,
+        tokenProvider: TokenProvider? = null,
+        uploadTaskDao: UploadTaskDao? = null,
+        recordingDiscoveryCoordinator: RecordingDiscoveryCoordinator? = null,
+        context: Context? = null
+    ) : this(callDao, callApiService, tokenProvider, uploadTaskDao, null, context) {
+        this.ioDispatcher = dispatcher
+        this.directRecordingDiscoveryCoordinator = recordingDiscoveryCoordinator
     }
 
     override fun getAllCallsFlow(): Flow<List<CallEntity>> = callDao.getAllCallsFlow()
@@ -140,14 +195,32 @@ class CallRepositoryImpl @Inject constructor(
     }
 
     override suspend fun reportCallToBackend(callId: String): AppResult<CallReportResponse> = withContext(ioDispatcher) {
-        val call = try {
-            callDao.getById(callId)
+        val initialCall = try {
+            callDao.getById(callId) ?: callDao.getByClientCallId(callId)
         } catch (e: Exception) {
             return@withContext AppResult.Failure(AppError.StorageError("Failed to find call $callId", e))
         }
 
-        if (call == null) {
+        if (initialCall == null) {
             return@withContext AppResult.Failure(AppError.StorageError("Call $callId not found in database"))
+        }
+
+        var call = initialCall
+        if (call.syncStatus == "DEFERRED_IDENTITY" || call.clientCallId.startsWith("local_pending_call_")) {
+            val tenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+            val installId = tokenProvider?.getDeviceIdOrInstallId()?.trim()?.ifEmpty { null }
+            if (tenantId.isNullOrBlank() || installId.isNullOrBlank()) {
+                Log.w(TAG, "Call sync safely deferred for ${call.id}: tenant or device identity not available")
+                callDao.updateSyncStatus(call.id, "DEFERRED_IDENTITY", "Awaiting tenant/device identity")
+                return@withContext AppResult.Failure(AppError.AuthError("Synchronization deferred: tenant or device identity not available"))
+            }
+
+            // Identity is now available: upgrade to canonical clientCallId
+            val suffix = call.clientCallId.removePrefix("local_pending_call_")
+            val canonicalClientCallId = "call_${tenantId}_${installId}_$suffix"
+            val upgraded = call.copy(clientCallId = canonicalClientCallId, syncStatus = "PENDING")
+            callDao.update(upgraded)
+            call = upgraded
         }
 
         val directionStr = when (call.callType) {
@@ -174,25 +247,25 @@ class CallRepositoryImpl @Inject constructor(
         try {
             val response = callApiService.reportCall(request)
             if (response.success) {
-                callDao.updateSyncStatus(callId, "SYNCED", null)
+                callDao.updateSyncStatus(call.id, "SYNCED", null)
                 AppResult.Success(response)
             } else {
                 val errorMsg = response.error ?: response.message ?: "Failed to report call"
-                callDao.updateSyncStatus(callId, "FAILED", errorMsg)
+                callDao.updateSyncStatus(call.id, "FAILED", errorMsg)
                 AppResult.Failure(AppError.NetworkError(errorMsg))
             }
         } catch (e: HttpException) {
             val code = e.code()
             val errorMsg = "Server error $code: ${e.message()}"
-            callDao.updateSyncStatus(callId, "FAILED", errorMsg)
+            callDao.updateSyncStatus(call.id, "FAILED", errorMsg)
             AppResult.Failure(AppError.NetworkError(errorMsg, httpCode = code, cause = e))
         } catch (e: IOException) {
             val errorMsg = "Network unavailable: offline call preserved"
-            callDao.updateSyncStatus(callId, "PENDING", errorMsg)
+            callDao.updateSyncStatus(call.id, "PENDING", errorMsg)
             AppResult.Failure(AppError.NetworkError(errorMsg, cause = e))
         } catch (e: Exception) {
             val errorMsg = "Unexpected error reporting call: ${e.message}"
-            callDao.updateSyncStatus(callId, "FAILED", errorMsg)
+            callDao.updateSyncStatus(call.id, "FAILED", errorMsg)
             AppResult.Failure(AppError.UnknownError(errorMsg, cause = e))
         }
     }
@@ -208,38 +281,197 @@ class CallRepositoryImpl @Inject constructor(
             for (dto in response.data) {
                 val callId = dto.clientCallId?.ifBlank { null } ?: dto.id?.ifBlank { null } ?: continue
                 val existing = callDao.getByClientCallId(callId) ?: callDao.getById(callId)
-                if (existing == null) {
-                    val rawPhone = dto.phoneNumber ?: dto.number ?: ""
-                    val directionInt = when (dto.callDirection ?: dto.direction) {
-                        "INCOMING", "inbound" -> CallLog.Calls.INCOMING_TYPE
-                        "OUTGOING", "outbound" -> CallLog.Calls.OUTGOING_TYPE
-                        "MISSED" -> CallLog.Calls.MISSED_TYPE
-                        "REJECTED" -> CallLog.Calls.REJECTED_TYPE
-                        else -> CallLog.Calls.OUTGOING_TYPE
-                    }
-                    val entity = CallEntity(
-                        id = callId,
-                        clientCallId = callId,
-                        normalizedNumber = rawPhone,
-                        rawNumber = rawPhone,
-                        callType = directionInt,
-                        startTimeEpochMs = dto.startTimeMs ?: System.currentTimeMillis(),
-                        durationSeconds = dto.durationSeconds ?: dto.duration ?: 0L,
-                        isLeadCall = !dto.leadId.isNullOrBlank() && !dto.isUnlinked,
-                        leadId = dto.leadId,
-                        simId = dto.simId,
-                        callOutcome = dto.callOutcome ?: dto.outcome,
-                        notes = dto.notes,
-                        syncStatus = "SYNCED",
-                        createdAtEpochMs = dto.startTimeMs ?: System.currentTimeMillis()
+                val rawPhone = dto.phoneNumber ?: dto.number ?: ""
+                val serverOutcome = dto.callOutcome ?: dto.outcome
+                val hasRec = dto.hasRecording || (dto.recordingFileId != null)
+
+                if (existing != null) {
+                    // Update existing canonical call: retain local outcome if server outcome is pending/null
+                    val updated = existing.copy(
+                        callOutcome = serverOutcome ?: existing.callOutcome,
+                        notes = dto.notes ?: existing.notes,
+                        hasRecording = hasRec || existing.hasRecording,
+                        syncStatus = "SYNCED"
                     )
-                    callDao.insert(entity)
-                    insertedCount++
+                    callDao.update(updated)
+                } else {
+                    // Fallback matching: signature search (phone + start time within 5000ms)
+                    val startTime = dto.startTimeMs ?: System.currentTimeMillis()
+                    val candidates = callDao.findCandidatesBySignature(
+                        normalizedNumber = rawPhone,
+                        minStartEpochMs = startTime - 5000L,
+                        maxStartEpochMs = startTime + 5000L
+                    )
+
+                    if (candidates.size == 1) {
+                        // Unambiguous candidate match: merge server attributes into canonical existing entity
+                        val candidate = candidates.first()
+                        val updated = candidate.copy(
+                            clientCallId = callId,
+                            callOutcome = serverOutcome ?: candidate.callOutcome,
+                            notes = dto.notes ?: candidate.notes,
+                            hasRecording = hasRec || candidate.hasRecording,
+                            syncStatus = "SYNCED"
+                        )
+                        callDao.update(updated)
+                    } else if (candidates.isEmpty()) {
+                        // Genuinely new call record
+                        val directionInt = when (dto.callDirection ?: dto.direction) {
+                            "INCOMING", "inbound" -> CallLog.Calls.INCOMING_TYPE
+                            "OUTGOING", "outbound" -> CallLog.Calls.OUTGOING_TYPE
+                            "MISSED" -> CallLog.Calls.MISSED_TYPE
+                            "REJECTED" -> CallLog.Calls.REJECTED_TYPE
+                            else -> CallLog.Calls.OUTGOING_TYPE
+                        }
+                        val entity = CallEntity(
+                            id = callId,
+                            clientCallId = callId,
+                            normalizedNumber = rawPhone,
+                            rawNumber = rawPhone,
+                            callType = directionInt,
+                            startTimeEpochMs = startTime,
+                            durationSeconds = dto.durationSeconds ?: dto.duration ?: 0L,
+                            isLeadCall = !dto.leadId.isNullOrBlank() && !dto.isUnlinked,
+                            leadId = dto.leadId,
+                            simId = dto.simId,
+                            callOutcome = serverOutcome,
+                            notes = dto.notes,
+                            hasRecording = hasRec,
+                            syncStatus = "SYNCED",
+                            createdAtEpochMs = startTime
+                        )
+                        callDao.insert(entity)
+                        insertedCount++
+                    } else {
+                        // Multiple candidate matches found: do not guess or merge per strict safety rules!
+                        android.util.Log.w("CallRepository", "Ambiguous call candidates found (${candidates.size}) for phone=$rawPhone, start=$startTime. Skipping merge.")
+                    }
                 }
             }
             AppResult.Success(insertedCount)
         } catch (e: Exception) {
             AppResult.Failure(AppError.NetworkError("Call sync failed: ${e.message}", cause = e))
+        }
+    }
+
+    override suspend fun getUnassignedCallsForNumber(normalizedNumber: String, rawNumber: String): AppResult<List<CallEntity>> = withContext(ioDispatcher) {
+        try {
+            val calls = callDao.getUnassignedCallsForNumber(normalizedNumber, rawNumber)
+            AppResult.Success(calls)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to fetch unassigned calls: ${e.message}", e))
+        }
+    }
+
+    override suspend fun associateCallToLead(callId: String, leadId: String): AppResult<Unit> = withContext(ioDispatcher) {
+        try {
+            callDao.associateCallToLead(callId, leadId, "PENDING")
+            uploadTaskDao?.updateLeadIdForCall(callId, leadId)
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to associate call to lead: ${e.message}", e))
+        }
+    }
+
+    override suspend fun reconcileCallsForLead(lead: LeadEntity): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            val normPhone = lead.normalizedNumber.trim()
+            val rawPhone = lead.rawNumber.trim()
+            if (normPhone.isBlank() && rawPhone.isBlank()) {
+                return@withContext AppResult.Success(0)
+            }
+
+            // 1. Find all unassigned calls in Room matching this lead's numbers
+            val unassignedCalls = callDao.getUnassignedCallsForNumber(normPhone, rawPhone)
+            if (unassignedCalls.isEmpty()) {
+                return@withContext AppResult.Success(0)
+            }
+
+            var reconciledCount = 0
+            val discoveryCoordinator = try {
+                recordingDiscoveryCoordinatorProvider?.get() ?: directRecordingDiscoveryCoordinator
+            } catch (e: Exception) {
+                null
+            }
+
+            for (call in unassignedCalls) {
+                // Safety check: Never silently reassign a call already linked to a different lead
+                if (!call.leadId.isNullOrBlank() && call.leadId != lead.id) {
+                    continue
+                }
+
+                // 2. Associate canonical CallEntity to the new lead in Room
+                callDao.associateCallToLead(call.clientCallId, lead.id, "PENDING")
+                reconciledCount++
+
+                // 3. Update existing UploadTaskEntity if one exists for this call
+                uploadTaskDao?.updateLeadIdForCall(call.clientCallId, lead.id)
+                if (call.id != call.clientCallId) {
+                    uploadTaskDao?.updateLeadIdForCall(call.id, lead.id)
+                }
+                val existingTask = uploadTaskDao?.getByCallId(call.clientCallId)
+                    ?: uploadTaskDao?.getByCallId(call.id)
+
+                if (existingTask != null) {
+                    // If upload task exists and is not yet completed/uploaded, queue upload
+                    val isTerminal = existingTask.status in listOf(
+                        UploadTaskEntity.STATE_UPLOADED,
+                        UploadTaskEntity.STATUS_COMPLETED
+                    )
+                    if (!isTerminal && context != null) {
+                        try {
+                            RecordingUploadWorker.enqueueUniqueUpload(context, existingTask.id, call.clientCallId)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to enqueue upload worker for reconciled call ${call.clientCallId}: ${e.message}")
+                        }
+                    }
+                } else if (!call.hasRecording && discoveryCoordinator != null) {
+                    // 4. If no recording was found yet, trigger targeted discovery on authorized sources
+                    try {
+                        val callEvent = com.leads365.apk.core.CallEvent(
+                            id = call.clientCallId,
+                            rawNumber = call.rawNumber,
+                            normalizedNumber = call.normalizedNumber,
+                            startTimeEpochMs = call.startTimeEpochMs,
+                            endTimeEpochMs = call.startTimeEpochMs + (call.durationSeconds * 1000L),
+                            durationSeconds = call.durationSeconds,
+                            direction = when (call.callType) {
+                                CallLog.Calls.INCOMING_TYPE -> com.leads365.apk.core.CallDirection.INCOMING
+                                CallLog.Calls.OUTGOING_TYPE -> com.leads365.apk.core.CallDirection.OUTGOING
+                                CallLog.Calls.MISSED_TYPE -> com.leads365.apk.core.CallDirection.MISSED
+                                else -> com.leads365.apk.core.CallDirection.INCOMING
+                            }
+                        )
+                        val discoveryResult = discoveryCoordinator.discoverAndMatchRecording(
+                            callEvent = callEvent,
+                            lead = lead,
+                            callId = call.clientCallId
+                        )
+                        if (discoveryResult is DiscoveryResult.Matched) {
+                            callDao.updateRecording(
+                                callId = call.clientCallId,
+                                hasRecording = true,
+                                recordingUri = discoveryResult.candidate.uriString,
+                                recordingFileName = discoveryResult.candidate.displayName,
+                                recordingFileSizeBytes = discoveryResult.candidate.sizeBytes
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Targeted discovery failed during call reconciliation: ${e.message}")
+                    }
+                }
+
+                // 5. Synchronize associated call to backend
+                try {
+                    reportCallToBackend(call.clientCallId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Backend report deferred for reconciled call ${call.clientCallId}: ${e.message}")
+                }
+            }
+
+            AppResult.Success(reconciledCount)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Call reconciliation failed: ${e.message}", e))
         }
     }
 
@@ -259,5 +491,9 @@ class CallRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             AppResult.Failure(AppError.StorageError("Failed to clear calls: ${e.message}", e))
         }
+    }
+
+    companion object {
+        private const val TAG = "CallRepository"
     }
 }

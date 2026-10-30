@@ -25,6 +25,8 @@ data class FollowUpDto(
     val priority: String = "medium",
     val notes: String = "",
     val assignedTo: String = "",
+    val sourceCallId: String? = null,
+    val idempotencyKey: String? = null,
     val isOverdue: Boolean = false,
     val isToday: Boolean = false
 )
@@ -53,7 +55,9 @@ data class CreateFollowUpRequest(
     val type: String = "call",
     val scheduledAt: String,
     val priority: String = "medium",
-    val notes: String = ""
+    val notes: String = "",
+    val sourceCallId: String? = null,
+    val idempotencyKey: String? = null
 )
 
 @Serializable
