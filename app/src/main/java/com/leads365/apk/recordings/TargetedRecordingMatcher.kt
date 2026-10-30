@@ -7,8 +7,12 @@ import com.leads365.apk.core.PhoneNumberNormalizer
 import com.leads365.apk.core.RecordingCandidate
 import com.leads365.apk.core.RecordingMatchResult
 import com.leads365.apk.core.TimeHelpers
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 class TargetedRecordingMatcher(
     private val normalizer: PhoneNumberNormalizer = PhoneNumberNormalizer(),
@@ -105,24 +109,30 @@ class TargetedRecordingMatcher(
     private fun scoreCandidate(candidate: RecordingCandidate, call: CallEvent): Pair<Double, String> {
         var breakdownDetails = ""
 
-        // 1. Time Score (weight: 0.40)
-        // Accommodates dialers setting timestamp at dialing/creation (callStart) or completion (callEnd)
         val fileTimeMs = candidate.lastModifiedEpochMs
         val callStartMs = call.startTimeEpochMs
         val callEndMs = call.endTimeEpochMs
 
+        // Extract timestamp from filename if present (Vivo, Samsung, Xiaomi, Oppo dialers)
+        val filenameTimeMs = extractTimestampEpochMs(candidate.displayName)
+        val filenameDiffMs: Long? = if (filenameTimeMs != null) {
+            val dStart = abs(filenameTimeMs - callStartMs)
+            val dEnd = abs(filenameTimeMs - callEndMs)
+            min(dStart, dEnd)
+        } else null
+
+        // 1. Time Score (weight: 0.40)
+        val isFileTimeIdeal = fileTimeMs in (callStartMs - 120_000L)..(callEndMs + 120_000L)
+        val isFilenameTimeIdeal = filenameDiffMs != null && filenameDiffMs <= 120_000L
+
         val timeScore = when {
-            // File timestamped between callStart - 120s and callEnd + 90s: ideal dialer flush window
-            fileTimeMs in (callStartMs - 120_000L)..(callEndMs + 90_000L) -> 0.40
-            // File timestamped within 90s to 240s after call end:
-            fileTimeMs in (callEndMs + 90_001L)..(callEndMs + 240_000L) -> 0.32
-            // File timestamped within 240s to 600s after call end (10 min):
-            fileTimeMs in (callEndMs + 240_001L)..(callEndMs + 600_000L) -> 0.22
-            // File timestamped between 120s and 240s before call start (long ring):
-            fileTimeMs in (callStartMs - 240_000L)..(callStartMs - 120_001L) -> 0.28
-            // Fallback when lastModified is missing from SAF provider:
+            isFileTimeIdeal || isFilenameTimeIdeal -> 0.40
+            fileTimeMs in (callEndMs + 120_001L)..(callEndMs + 300_000L) -> 0.20
+            filenameDiffMs != null && filenameDiffMs <= 300_000L -> 0.20
+            fileTimeMs in (callEndMs + 300_001L)..(callEndMs + 600_000L) -> 0.12
+            fileTimeMs in (callStartMs - 240_000L)..(callStartMs - 120_001L) -> 0.15
             fileTimeMs == 0L || fileTimeMs == callEndMs -> 0.35
-            else -> 0.10
+            else -> 0.05
         }
         breakdownDetails += "Time: ${(timeScore * 100).toInt()}pts; "
 
@@ -140,10 +150,9 @@ class TargetedRecordingMatcher(
                 else -> 0.05
             }
         } else {
-            // If audio duration is not in metadata (e.g. SAF DocumentFile without media extractor),
-            // award partial baseline duration score if file size is consistent with duration
-            val expectedMinBytes = max(4_000L, call.durationSeconds * 2_000L)
-            if (candidate.sizeBytes >= expectedMinBytes) 0.25 else 0.15
+            // 1,000 bytes/sec safely covers low bitrate formats (AMR-NB ~1.5KB/s, AAC-HE ~2KB/s)
+            val expectedMinBytes = max(2_000L, call.durationSeconds * 1_000L)
+            if (candidate.sizeBytes >= expectedMinBytes) 0.25 else if (candidate.sizeBytes > 1_000L) 0.18 else 0.10
         }
         breakdownDetails += "Duration: ${(durationScore * 100).toInt()}pts; "
 
@@ -155,12 +164,16 @@ class TargetedRecordingMatcher(
         val withLeadingZero = if (last10.length == 10) "0$last10" else ""
 
         var filenameScore = 0.0
+        val fDiff = filenameDiffMs
         when {
             // Filename contains the normalized number, leading zero version, or last 10 digits
             withLeadingZero.isNotEmpty() && nameLower.contains(withLeadingZero) -> filenameScore = 0.25
             digitsOnly.isNotEmpty() && nameLower.contains(digitsOnly) -> filenameScore = 0.25
             last10.isNotEmpty() && nameLower.contains(last10) -> filenameScore = 0.24
             last7.isNotEmpty() && nameLower.contains(last7) -> filenameScore = 0.18
+            fDiff != null && fDiff <= 60_000L -> filenameScore = 0.22
+            fDiff != null && fDiff <= 120_000L -> filenameScore = 0.18
+            fDiff != null && fDiff <= 180_000L -> filenameScore = 0.12
             // Filename contains dialer recording keywords (e.g. "call", "recording", "rec", "record", "sound", "vivo", "voice", "audio")
             nameLower.contains("call") || nameLower.contains("rec") || nameLower.contains("phone") ||
             nameLower.contains("record") || nameLower.contains("sound") || nameLower.contains("vivo") ||
@@ -171,5 +184,34 @@ class TargetedRecordingMatcher(
 
         val totalScore = timeScore + durationScore + filenameScore
         return Pair(totalScore, breakdownDetails)
+    }
+
+    private fun extractTimestampEpochMs(filename: String): Long? {
+        val formats = listOf(
+            "yyyyMMdd_HHmmss",
+            "yyyyMMdd-HHmmss",
+            "yyyy-MM-dd_HH-mm-ss",
+            "yyyy-MM-dd-HH-mm-ss",
+            "yyyyMMddHHmmss",
+            "yyMMdd_HHmmss",
+            "yyMMddHHmmss"
+        )
+        val regex = Regex("""(20\d{6}[_-]?\d{6}|\d{6}[_-]?\d{6}|20\d{2}-\d{2}-\d{2}[_-]\d{2}-\d{2}-\d{2})""")
+        val match = regex.find(filename) ?: return null
+        val dateStr = match.value
+
+        for (pattern in formats) {
+            try {
+                val sdf = SimpleDateFormat(pattern, Locale.US).apply {
+                    timeZone = TimeZone.getDefault()
+                    isLenient = false
+                }
+                val date = sdf.parse(dateStr)
+                if (date != null && date.time > 1500000000000L) {
+                    return date.time
+                }
+            } catch (ignored: Exception) {}
+        }
+        return null
     }
 }

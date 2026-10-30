@@ -60,6 +60,14 @@ class UploadQueueRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getTaskByLocalFileUri(uri: String): AppResult<UploadTaskEntity?> = withContext(ioDispatcher) {
+        try {
+            AppResult.Success(uploadTaskDao.getByLocalFileUri(uri))
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to get upload task by localFileUri $uri: ${e.message}", e))
+        }
+    }
+
     override suspend fun updateStatus(id: String, status: String, error: String?): AppResult<Unit> = withContext(ioDispatcher) {
         try {
             uploadTaskDao.updateStatus(id, status, System.currentTimeMillis(), error)

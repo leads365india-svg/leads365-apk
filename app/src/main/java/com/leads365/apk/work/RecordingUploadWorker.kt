@@ -256,7 +256,8 @@ class RecordingUploadWorker(
             context: Context,
             taskId: String,
             callId: String?,
-            wifiOnly: Boolean? = null
+            wifiOnly: Boolean? = null,
+            policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE
         ) {
             val resolvedCallId = if (!callId.isNullOrBlank()) callId else taskId
             val isWifiOnly = wifiOnly ?: context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -279,7 +280,7 @@ class RecordingUploadWorker(
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME_PREFIX + resolvedCallId,
-                ExistingWorkPolicy.KEEP,
+                policy,
                 request
             )
         }

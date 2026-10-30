@@ -94,8 +94,16 @@ class CallsViewModel @Inject constructor(
                     mediaStoreRecordingSource.listDiscoveredRecordings()
                 } else emptyList()
 
-                _discoveredCandidates.value = (safList + mediaStoreList).distinctBy { it.uriString }
+                val candidates = (safList + mediaStoreList).distinctBy { it.uriString }
+                _discoveredCandidates.value = candidates
                 refreshAccessState()
+
+                // Reconcile discovered audio files with calls in Room that lack recordings
+                try {
+                    callRepository.reconcileUnmatchedRecordings(candidates)
+                } catch (e: Exception) {
+                    Log.w("CallsViewModel", "Error reconciling unmatched recordings: ${e.message}")
+                }
 
                 try {
                     callRepository.syncCallsFromBackend()
@@ -111,30 +119,7 @@ class CallsViewModel @Inject constructor(
         callRepository.getAllCallsFlow(),
         uploadQueueRepository.getAllTasksFlow()
     ) { calls, tasks ->
-        val taskMapByCallId = tasks.filter { !it.callId.isNullOrBlank() }
-            .associateBy { it.callId!! }
-
-        calls.map { call ->
-            val task = taskMapByCallId[call.id] ?: taskMapByCallId[call.clientCallId]
-            val hasRec = call.hasRecording || task != null || !call.recordingUri.isNullOrBlank()
-            val fileName = call.recordingFileName ?: task?.fileName
-            val fileSize = call.recordingFileSizeBytes ?: task?.fileSizeBytes
-            val uri = call.recordingUri ?: task?.localFileUri
-            val isUnlinked = !call.isLeadCall || call.leadId.isNullOrBlank()
-
-            CallRecordUiModel(
-                id = call.id,
-                call = call,
-                uploadTask = task,
-                isUnlinkedInbound = isUnlinked,
-                hasRecording = hasRec,
-                recordingFileName = fileName,
-                recordingFileSizeBytes = fileSize,
-                recordingUri = uri,
-                isCandidateOnly = false,
-                discoveryState = if (hasRec) "Matched" else "No File Found"
-            )
-        }
+        mapCallRecords(calls, tasks)
     }
 
     // Unified call & recording list based on active filter
@@ -143,36 +128,7 @@ class CallsViewModel @Inject constructor(
         _discoveredCandidates,
         _selectedFilter
     ) { callRecords, candidates, filter ->
-        val knownUris = callRecords.mapNotNull { it.recordingUri }.toSet()
-        val knownNames = callRecords.mapNotNull { it.recordingFileName }.toSet()
-
-        val unmatchedCandidates = candidates.filter { c ->
-            c.uriString !in knownUris && c.displayName !in knownNames
-        }.map { c ->
-            CallRecordUiModel(
-                id = "cand_${c.uriString.hashCode()}",
-                call = null,
-                candidate = c,
-                uploadTask = null,
-                isUnlinkedInbound = false,
-                hasRecording = true,
-                recordingFileName = c.displayName,
-                recordingFileSizeBytes = c.sizeBytes,
-                recordingUri = c.uriString,
-                isCandidateOnly = true,
-                discoveryState = if (!c.isReadable) "Inaccessible" else "Unmatched"
-            )
-        }
-
-        when (filter) {
-            CallFilterTab.ALL -> callRecords
-            CallFilterTab.WITH_RECORDINGS -> {
-                val matchedWithAudio = callRecords.filter { it.hasRecording }
-                matchedWithAudio + unmatchedCandidates
-            }
-            CallFilterTab.LEAD_CALLS -> callRecords.filter { !it.isUnlinkedInbound }
-            CallFilterTab.UNLINKED -> callRecords.filter { it.isUnlinkedInbound }
-        }
+        filterCallItems(callRecords, candidates, filter)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
@@ -220,10 +176,60 @@ class CallsViewModel @Inject constructor(
         _isFolderConfigured.value = safRecordingSource.isConfigured()
     }
 
-    fun retryUpload(task: UploadTaskEntity) {
-        viewModelScope.launch {
-            uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_FILE_FOUND, null)
-            RecordingUploadWorker.enqueueUniqueUpload(context, task.id, task.callId)
+    suspend fun executeUploadRecording(callId: String) {
+        val call = (callRepository.getCallById(callId) as? com.leads365.apk.core.AppResult.Success)?.data
+            ?: (callRepository.getByClientCallId(callId) as? com.leads365.apk.core.AppResult.Success)?.data
+
+        val targetCallId = call?.clientCallId ?: call?.id ?: callId
+
+        var task = (uploadQueueRepository.getTaskByCallId(targetCallId) as? com.leads365.apk.core.AppResult.Success)?.data
+            ?: (uploadQueueRepository.getTaskByCallId(callId) as? com.leads365.apk.core.AppResult.Success)?.data
+            ?: (call?.recordingUri?.let { (uploadQueueRepository.getTaskByLocalFileUri(it) as? com.leads365.apk.core.AppResult.Success)?.data })
+
+        if (task == null && call != null && !call.recordingUri.isNullOrBlank()) {
+            val newTask = UploadTaskEntity(
+                id = java.util.UUID.randomUUID().toString(),
+                callId = targetCallId,
+                leadId = call.leadId ?: "unlinked",
+                localFileUri = call.recordingUri!!,
+                fileName = call.recordingFileName ?: "recording_${System.currentTimeMillis()}.m4a",
+                fileSizeBytes = call.recordingFileSizeBytes ?: 0L,
+                status = UploadTaskEntity.STATUS_PENDING
+            )
+            uploadQueueRepository.enqueueTask(newTask)
+            task = newTask
+        }
+
+        if (task != null) {
+            uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATUS_PENDING, null)
+            RecordingUploadWorker.enqueueUniqueUpload(
+                context = context,
+                taskId = task.id,
+                callId = targetCallId,
+                policy = androidx.work.ExistingWorkPolicy.REPLACE
+            )
+        }
+    }
+
+    fun uploadRecording(callId: String, dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
+            executeUploadRecording(callId)
+        }
+    }
+
+    suspend fun executeRetryUpload(task: UploadTaskEntity) {
+        uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATUS_PENDING, null)
+        RecordingUploadWorker.enqueueUniqueUpload(
+            context = context,
+            taskId = task.id,
+            callId = task.callId,
+            policy = androidx.work.ExistingWorkPolicy.REPLACE
+        )
+    }
+
+    fun retryUpload(task: UploadTaskEntity, dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
+            executeRetryUpload(task)
         }
     }
 
@@ -246,6 +252,76 @@ class CallsViewModel @Inject constructor(
             android.widget.Toast.makeText(context, "Unable to play audio: ${e.message ?: "File unreadable"}", android.widget.Toast.LENGTH_SHORT).show()
             Log.e("CallsViewModel", "Failed to launch native audio player: ${e.message}")
             false
+        }
+    }
+
+    companion object {
+        fun mapCallRecords(calls: List<CallEntity>, tasks: List<UploadTaskEntity>): List<CallRecordUiModel> {
+            val taskMapByCallId = tasks.filter { !it.callId.isNullOrBlank() }
+                .associateBy { it.callId!! }
+            val taskMapByUri = tasks.filter { !it.localFileUri.isNullOrBlank() }
+                .associateBy { it.localFileUri }
+
+            return calls.map { call ->
+                val task = taskMapByCallId[call.id] 
+                    ?: taskMapByCallId[call.clientCallId]
+                    ?: (call.recordingUri?.let { taskMapByUri[it] })
+                val hasRec = call.hasRecording || task != null || !call.recordingUri.isNullOrBlank()
+                val fileName = call.recordingFileName ?: task?.fileName
+                val fileSize = call.recordingFileSizeBytes ?: task?.fileSizeBytes
+                val uri = call.recordingUri ?: task?.localFileUri
+                val isUnlinked = !call.isLeadCall || call.leadId.isNullOrBlank()
+
+                CallRecordUiModel(
+                    id = call.id,
+                    call = call,
+                    uploadTask = task,
+                    isUnlinkedInbound = isUnlinked,
+                    hasRecording = hasRec,
+                    recordingFileName = fileName,
+                    recordingFileSizeBytes = fileSize,
+                    recordingUri = uri,
+                    isCandidateOnly = false,
+                    discoveryState = if (hasRec) "Matched" else "No File Found"
+                )
+            }
+        }
+
+        fun filterCallItems(
+            callRecords: List<CallRecordUiModel>,
+            candidates: List<RecordingCandidate>,
+            filter: CallFilterTab
+        ): List<CallRecordUiModel> {
+            val knownUris = callRecords.mapNotNull { it.recordingUri }.toSet()
+            val knownNames = callRecords.mapNotNull { it.recordingFileName }.toSet()
+
+            val unmatchedCandidates = candidates.filter { c ->
+                c.uriString !in knownUris && c.displayName !in knownNames
+            }.map { c ->
+                CallRecordUiModel(
+                    id = "cand_${c.uriString.hashCode()}",
+                    call = null,
+                    candidate = c,
+                    uploadTask = null,
+                    isUnlinkedInbound = false,
+                    hasRecording = true,
+                    recordingFileName = c.displayName,
+                    recordingFileSizeBytes = c.sizeBytes,
+                    recordingUri = c.uriString,
+                    isCandidateOnly = true,
+                    discoveryState = if (!c.isReadable) "Inaccessible" else "Unmatched"
+                )
+            }
+
+            return when (filter) {
+                CallFilterTab.ALL -> callRecords
+                CallFilterTab.WITH_RECORDINGS -> {
+                    val matchedWithAudio = callRecords.filter { it.hasRecording }
+                    matchedWithAudio + unmatchedCandidates
+                }
+                CallFilterTab.LEAD_CALLS -> callRecords.filter { !it.isUnlinkedInbound }
+                CallFilterTab.UNLINKED -> callRecords.filter { it.isUnlinkedInbound }
+            }
         }
     }
 }

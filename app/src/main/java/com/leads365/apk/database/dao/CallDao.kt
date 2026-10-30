@@ -52,6 +52,9 @@ interface CallDao {
     @Query("SELECT * FROM calls ORDER BY startTimeEpochMs DESC LIMIT :limit")
     suspend fun getRecentCalls(limit: Int): List<CallEntity>
 
+    @Query("SELECT * FROM calls WHERE hasRecording = 0 OR recordingUri IS NULL ORDER BY startTimeEpochMs DESC LIMIT :limit")
+    suspend fun getCallsWithoutRecordings(limit: Int = 100): List<CallEntity>
+
     @Query("SELECT * FROM calls WHERE syncStatus = 'PENDING' AND isLeadCall = 1 ORDER BY startTimeEpochMs ASC")
     suspend fun getPendingSyncCalls(): List<CallEntity>
 

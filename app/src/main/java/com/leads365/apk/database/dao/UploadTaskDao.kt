@@ -25,6 +25,9 @@ interface UploadTaskDao {
     @Query("SELECT * FROM upload_tasks WHERE callId = :callId LIMIT 1")
     suspend fun getByCallId(callId: String): UploadTaskEntity?
 
+    @Query("SELECT * FROM upload_tasks WHERE localFileUri = :uri LIMIT 1")
+    suspend fun getByLocalFileUri(uri: String): UploadTaskEntity?
+
     @Query("UPDATE upload_tasks SET leadId = :leadId, updatedAtEpochMs = :timestamp WHERE callId = :callId")
     suspend fun updateLeadIdForCall(callId: String, leadId: String, timestamp: Long = System.currentTimeMillis()): Int
 

@@ -11,6 +11,7 @@ interface UploadQueueRepository {
     suspend fun getTasksByStatus(status: String): AppResult<List<UploadTaskEntity>>
     suspend fun getTaskById(id: String): AppResult<UploadTaskEntity?>
     suspend fun getTaskByCallId(callId: String): AppResult<UploadTaskEntity?>
+    suspend fun getTaskByLocalFileUri(uri: String): AppResult<UploadTaskEntity?> = AppResult.Success(null)
     suspend fun updateStatus(id: String, status: String, error: String? = null): AppResult<Unit>
     suspend fun incrementRetry(id: String, error: String): AppResult<Unit>
     suspend fun deleteTaskById(id: String): AppResult<Unit>

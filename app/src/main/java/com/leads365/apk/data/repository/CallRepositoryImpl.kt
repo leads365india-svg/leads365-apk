@@ -24,6 +24,10 @@ import com.leads365.apk.recordings.DiscoveryResult
 import com.leads365.apk.recordings.RecordingDiscoveryCoordinator
 import com.leads365.apk.work.RecordingUploadWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.leads365.apk.core.RecordingCandidate
+import com.leads365.apk.core.MatchStatus
+import com.leads365.apk.recordings.TargetedRecordingMatcher
+import java.util.UUID
 import javax.inject.Provider
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -472,6 +476,144 @@ class CallRepositoryImpl(
             AppResult.Success(reconciledCount)
         } catch (e: Exception) {
             AppResult.Failure(AppError.StorageError("Call reconciliation failed: ${e.message}", e))
+        }
+    }
+
+    override suspend fun reconcileUnmatchedRecordings(candidates: List<RecordingCandidate>?): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            val discoveryCoordinator = directRecordingDiscoveryCoordinator 
+                ?: recordingDiscoveryCoordinatorProvider?.get()
+
+            // 1. Find calls in Room that do not have an audio recording linked
+            val unmatchedCalls = callDao.getCallsWithoutRecordings(100)
+            if (unmatchedCalls.isEmpty()) {
+                return@withContext AppResult.Success(0)
+            }
+
+            // 2. Resolve candidates from argument or coordinator scan
+            val candidateList = candidates ?: run {
+                val dummyEvent = com.leads365.apk.core.CallEvent(
+                    id = "unmatched_scan",
+                    rawNumber = "",
+                    normalizedNumber = "",
+                    startTimeEpochMs = System.currentTimeMillis() - 86400000L,
+                    endTimeEpochMs = System.currentTimeMillis(),
+                    durationSeconds = 0,
+                    direction = com.leads365.apk.core.CallDirection.INCOMING
+                )
+                discoveryCoordinator?.scanSourcesForCandidates(dummyEvent, "") ?: emptyList()
+            }
+
+            if (candidateList.isEmpty()) {
+                return@withContext AppResult.Success(0)
+            }
+
+            // 3. Collect URIs and names already linked to other calls in Room
+            val allCalls = callDao.getRecentCalls(200)
+            val assignedUris = allCalls.mapNotNull { it.recordingUri }.toMutableSet()
+            val assignedNames = allCalls.mapNotNull { it.recordingFileName }.toMutableSet()
+
+            var reconciledCount = 0
+            val matcher = TargetedRecordingMatcher()
+
+            for (call in unmatchedCalls) {
+                val availableCandidates = candidateList.filter { 
+                    it.uriString !in assignedUris && it.displayName !in assignedNames 
+                }
+                if (availableCandidates.isEmpty()) break
+
+                val callEvent = com.leads365.apk.core.CallEvent(
+                    id = call.clientCallId,
+                    rawNumber = call.rawNumber,
+                    normalizedNumber = call.normalizedNumber,
+                    startTimeEpochMs = call.startTimeEpochMs,
+                    endTimeEpochMs = call.startTimeEpochMs + (call.durationSeconds * 1000L),
+                    durationSeconds = call.durationSeconds,
+                    direction = when (call.callType) {
+                        CallLog.Calls.INCOMING_TYPE -> com.leads365.apk.core.CallDirection.INCOMING
+                        CallLog.Calls.OUTGOING_TYPE -> com.leads365.apk.core.CallDirection.OUTGOING
+                        CallLog.Calls.MISSED_TYPE -> com.leads365.apk.core.CallDirection.MISSED
+                        else -> com.leads365.apk.core.CallDirection.INCOMING
+                    }
+                )
+
+                val matchResult = matcher.match(availableCandidates, callEvent)
+
+                if (matchResult.status == MatchStatus.FILE_FOUND && matchResult.matchedCandidate != null) {
+                    val matched = matchResult.matchedCandidate!!
+                    Log.i(TAG, "Reconciled recording '${matched.displayName}' to call ${call.clientCallId}")
+
+                    // Update call in Room
+                    callDao.updateRecording(
+                        callId = call.id,
+                        hasRecording = true,
+                        recordingUri = matched.uriString,
+                        recordingFileName = matched.displayName,
+                        recordingFileSizeBytes = matched.sizeBytes
+                    )
+                    callDao.updateRecording(
+                        callId = call.clientCallId,
+                        hasRecording = true,
+                        recordingUri = matched.uriString,
+                        recordingFileName = matched.displayName,
+                        recordingFileSizeBytes = matched.sizeBytes
+                    )
+
+                    assignedUris.add(matched.uriString)
+                    assignedNames.add(matched.displayName)
+
+                    // Ensure persistent UploadTaskEntity in Room
+                    if (uploadTaskDao != null) {
+                        val existingTask = uploadTaskDao.getByCallId(call.clientCallId)
+                            ?: uploadTaskDao.getByCallId(call.id)
+                            ?: uploadTaskDao.getByLocalFileUri(matched.uriString)
+
+                        val finalTask = if (existingTask == null) {
+                            val newTask = UploadTaskEntity(
+                                id = UUID.randomUUID().toString(),
+                                callId = call.clientCallId,
+                                leadId = call.leadId ?: "unlinked",
+                                localFileUri = matched.uriString,
+                                fileName = matched.displayName,
+                                fileSizeBytes = matched.sizeBytes,
+                                status = UploadTaskEntity.STATUS_PENDING
+                            )
+                            uploadTaskDao.insert(newTask)
+                            newTask
+                        } else {
+                            val updatedTask = existingTask.copy(
+                                callId = call.clientCallId,
+                                leadId = call.leadId ?: existingTask.leadId ?: "unlinked",
+                                localFileUri = matched.uriString,
+                                fileName = matched.displayName,
+                                fileSizeBytes = matched.sizeBytes
+                            )
+                            uploadTaskDao.update(updatedTask)
+                            updatedTask
+                        }
+
+                        // If call belongs to an assigned Lead, automatically trigger upload worker
+                        if (call.isLeadCall && !call.leadId.isNullOrBlank() && call.leadId != "unlinked" && context != null) {
+                            try {
+                                RecordingUploadWorker.enqueueUniqueUpload(
+                                    context = context,
+                                    taskId = finalTask.id,
+                                    callId = call.clientCallId
+                                )
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to enqueue RecordingUploadWorker for reconciled task: ${e.message}")
+                            }
+                        }
+                    }
+
+                    reconciledCount++
+                }
+            }
+
+            AppResult.Success(reconciledCount)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in reconcileUnmatchedRecordings: ${e.message}", e)
+            AppResult.Failure(AppError.StorageError("Failed to reconcile unmatched recordings: ${e.message}", e))
         }
     }
 

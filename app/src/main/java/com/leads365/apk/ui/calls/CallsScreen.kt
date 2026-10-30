@@ -240,7 +240,8 @@ fun CallsScreen(
                                 CallRecordCard(
                                     item = item,
                                     onPlay = { viewModel.playRecording(item.recordingUri) },
-                                    onRetryUpload = { item.uploadTask?.let { viewModel.retryUpload(it) } }
+                                    onUpload = { viewModel.uploadRecording(item.id) },
+                                    onRetryUpload = { item.uploadTask?.let { viewModel.retryUpload(it) } ?: viewModel.uploadRecording(item.id) }
                                 )
                             }
                         }
@@ -366,6 +367,7 @@ fun DiscoveredRecordingCandidateCard(
 fun CallRecordCard(
     item: CallRecordUiModel,
     onPlay: () -> Unit,
+    onUpload: () -> Unit = {},
     onRetryUpload: () -> Unit
 ) {
     val call = item.call ?: return
@@ -535,10 +537,11 @@ fun CallRecordCard(
             }
 
             // 4. DEDICATED RECORDING VISIBILITY CARD
-            if (item.hasRecording) {
+            if (item.hasRecording || item.uploadTask != null || !item.recordingUri.isNullOrBlank()) {
                 RecordingSectionCard(
                     item = item,
                     onPlay = onPlay,
+                    onUpload = onUpload,
                     onRetryUpload = onRetryUpload
                 )
             }
@@ -550,11 +553,22 @@ fun CallRecordCard(
 fun RecordingSectionCard(
     item: CallRecordUiModel,
     onPlay: () -> Unit,
+    onUpload: () -> Unit,
     onRetryUpload: () -> Unit
 ) {
     val uploadTask = item.uploadTask
     val fileName = item.recordingFileName ?: "Call Recording"
     val fileSizeFormatted = formatBytes(item.recordingFileSizeBytes ?: 0L)
+    val isUploading = uploadTask?.status == UploadTaskEntity.STATE_UPLOADING ||
+            uploadTask?.status == UploadTaskEntity.STATUS_IN_PROGRESS
+    val isUploaded = uploadTask?.status == UploadTaskEntity.STATE_UPLOADED ||
+            uploadTask?.status == UploadTaskEntity.STATUS_COMPLETED
+    val isFailed = uploadTask?.status == UploadTaskEntity.STATE_RETRY_WAIT ||
+            uploadTask?.status == UploadTaskEntity.STATUS_FAILED ||
+            uploadTask?.status == UploadTaskEntity.STATE_FAILED_PERMANENT ||
+            uploadTask?.status == UploadTaskEntity.STATE_REJECTED_BY_SERVER
+    val isReadable = item.candidate?.isReadable ?: true
+    val errorText = uploadTask?.lastError ?: item.candidate?.unreadableReason
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -609,13 +623,39 @@ fun RecordingSectionCard(
                 UploadPipelineBadge(uploadTask = uploadTask, hasRecording = item.hasRecording)
             }
 
-            // Play & Retry Action Row (Touch target >= 48dp)
+            // Diagnostic banner if file is missing, unreadable, or failed
+            if (!errorText.isNullOrBlank() || !isReadable) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(RedDanger.copy(alpha = 0.08f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = RedDanger,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = errorText ?: "Recording file is missing or cannot be opened",
+                        fontSize = 10.sp,
+                        color = RedDanger,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Play, Upload & Retry Action Row (Touch target >= 48dp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!item.recordingUri.isNullOrBlank()) {
+                if (!item.recordingUri.isNullOrBlank() && isReadable) {
                     OutlinedButton(
                         onClick = onPlay,
                         modifier = Modifier.heightIn(min = 48.dp),
@@ -634,26 +674,68 @@ fun RecordingSectionCard(
                     }
                 }
 
-                if (uploadTask?.status == UploadTaskEntity.STATE_RETRY_WAIT ||
-                    uploadTask?.status == UploadTaskEntity.STATUS_FAILED ||
-                    uploadTask?.status == UploadTaskEntity.STATE_FAILED_PERMANENT
-                ) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = onRetryUpload,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BlueAccent)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Retry Upload",
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Retry Upload", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                when {
+                    isUploading -> {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {},
+                            enabled = false,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                disabledContainerColor = BlueAccent.copy(alpha = 0.7f),
+                                disabledContentColor = Color.White
+                            )
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Uploading...", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    isFailed -> {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = onRetryUpload,
+                            enabled = isReadable,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = RedDanger)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Retry Upload",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Retry Upload", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    !isUploaded -> {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = onUpload,
+                            enabled = isReadable,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BlueAccent)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = "Upload to CRM",
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Upload to CRM", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -700,7 +782,9 @@ fun UploadPipelineBadge(uploadTask: UploadTaskEntity?, hasRecording: Boolean) {
                 }
             }
         }
-        uploadTask?.status == UploadTaskEntity.STATUS_FAILED || uploadTask?.status == UploadTaskEntity.STATE_FAILED_PERMANENT -> {
+        uploadTask?.status == UploadTaskEntity.STATUS_FAILED ||
+        uploadTask?.status == UploadTaskEntity.STATE_FAILED_PERMANENT ||
+        uploadTask?.status == UploadTaskEntity.STATE_REJECTED_BY_SERVER -> {
             Surface(shape = RoundedCornerShape(4.dp), color = RedDanger.copy(alpha = 0.15f)) {
                 Row(
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
