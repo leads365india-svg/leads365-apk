@@ -47,10 +47,30 @@ class CallProcessingManager(
     private val normalizer: PhoneNumberNormalizer,
     private val recordingDiscoveryCoordinator: RecordingDiscoveryCoordinator?,
     private val tokenProvider: TokenProvider? = null,
+    private val autoLeadCaptureConfig: AutoLeadCaptureConfig? = null,
     @Suppress("UNUSED_PARAMETER") dummy: Unit = Unit
 ) {
 
     @Inject
+    constructor(
+        leadRepository: LeadRepository,
+        callRepository: CallRepository,
+        pendingCallManager: PendingCallManager,
+        normalizer: PhoneNumberNormalizer,
+        recordingDiscoveryCoordinator: RecordingDiscoveryCoordinator,
+        tokenProvider: TokenProvider,
+        autoLeadCaptureConfig: AutoLeadCaptureConfig
+    ) : this(
+        leadRepository = leadRepository,
+        callRepository = callRepository,
+        pendingCallManager = pendingCallManager,
+        normalizer = normalizer,
+        recordingDiscoveryCoordinator = recordingDiscoveryCoordinator,
+        tokenProvider = tokenProvider,
+        autoLeadCaptureConfig = autoLeadCaptureConfig,
+        dummy = Unit
+    )
+
     constructor(
         leadRepository: LeadRepository,
         callRepository: CallRepository,
@@ -65,6 +85,7 @@ class CallProcessingManager(
         normalizer = normalizer,
         recordingDiscoveryCoordinator = recordingDiscoveryCoordinator,
         tokenProvider = tokenProvider,
+        autoLeadCaptureConfig = null,
         dummy = Unit
     )
 
@@ -81,6 +102,7 @@ class CallProcessingManager(
         normalizer = normalizer,
         recordingDiscoveryCoordinator = recordingDiscoveryCoordinator,
         tokenProvider = null,
+        autoLeadCaptureConfig = null,
         dummy = Unit
     )
 
@@ -96,6 +118,7 @@ class CallProcessingManager(
         normalizer = normalizer,
         recordingDiscoveryCoordinator = null,
         tokenProvider = null,
+        autoLeadCaptureConfig = null,
         dummy = Unit
     )
 
@@ -179,6 +202,62 @@ class CallProcessingManager(
             }
         }
 
+        // Fallback: Automatic Lead Capture for Answered Incoming Calls
+        val phoneDigits = normalizer.extractLast10Digits(normalizedNumber).ifEmpty {
+            normalizedNumber.replace("[^0-9]".toRegex(), "")
+        }
+        val isAutoEnabled = autoLeadCaptureConfig?.isAutoLeadCreationEnabled() == true
+        val minDuration = autoLeadCaptureConfig?.getMinDurationSeconds() ?: AutoLeadCaptureConfig.DEFAULT_MIN_DURATION_SECONDS
+        val isValidCallerNumber = phoneDigits.length >= 7 &&
+            !normalizedNumber.contains("unknown", ignoreCase = true) &&
+            !normalizedNumber.contains("private", ignoreCase = true)
+        val isNativeIncomingType = callEvent.callType == null || callEvent.callType == CallLog.Calls.INCOMING_TYPE
+        val isNotMissedOrRejected = callEvent.direction != CallDirection.MISSED &&
+            callEvent.callType != CallLog.Calls.MISSED_TYPE &&
+            callEvent.callType != CallLog.Calls.REJECTED_TYPE
+
+        if (matchingLead == null &&
+            isAutoEnabled &&
+            callEvent.direction == CallDirection.INCOMING &&
+            isNativeIncomingType &&
+            isNotMissedOrRejected &&
+            callEvent.durationSeconds >= minDuration &&
+            isValidCallerNumber
+        ) {
+            // Check Do-Not-Record (DNR) policy before auto-creating lead
+            val isDnr = try {
+                val allLeads = (leadRepository.getAllLeads() as? AppResult.Success)?.data.orEmpty()
+                allLeads.any { it.isDoNotRecord && (it.normalizedNumber == normalizedNumber || normalizer.extractLast10Digits(it.normalizedNumber) == phoneDigits) }
+            } catch (e: Exception) {
+                false
+            }
+
+            if (!isDnr) {
+                val autoLeadId = "lead_auto_${phoneDigits}_${callEvent.startTimeEpochMs}"
+                val provisionalName = "Unknown Caller - $normalizedNumber"
+                val autoLead = LeadEntity(
+                    id = autoLeadId,
+                    name = provisionalName,
+                    rawNumber = callEvent.rawNumber,
+                    normalizedNumber = normalizedNumber,
+                    status = "New",
+                    isDoNotRecord = false,
+                    notes = "Auto-captured from answered incoming call (${callEvent.durationSeconds}s)",
+                    createdAtEpochMs = callEvent.startTimeEpochMs,
+                    updatedAtEpochMs = now
+                )
+                val saveRes = leadRepository.saveLead(autoLead)
+                if (saveRes is AppResult.Success) {
+                    matchingLead = autoLead
+                    Log.i(TAG, "Auto-created provisional Lead for incoming call: id=$autoLeadId, phone=$redactedNumber, duration=${callEvent.durationSeconds}s")
+                } else {
+                    Log.w(TAG, "Failed to persist auto-created Lead: $saveRes")
+                }
+            } else {
+                Log.i(TAG, "Skipping auto-lead creation: number $redactedNumber matches Do-Not-Record (DNR) policy.")
+            }
+        }
+
         // 4. Assigned-Lead Gate & Unlinked Incoming Customer Detection
         val isUnlinkedInbound = matchingLead == null && (callEvent.direction == CallDirection.INCOMING || callEvent.direction == CallDirection.MISSED)
 
@@ -203,9 +282,6 @@ class CallProcessingManager(
         val tenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
 
         val hasRequiredIdentity = !tenantId.isNullOrBlank() && !installId.isNullOrBlank()
-        val phoneDigits = normalizer.extractLast10Digits(normalizedNumber).ifEmpty {
-            normalizedNumber.replace("[^0-9]".toRegex(), "")
-        }
 
         val clientCallId = if (hasRequiredIdentity) {
             if (rawNativeId.isNotBlank() && !rawNativeId.startsWith("call_")) {
@@ -226,7 +302,7 @@ class CallProcessingManager(
 
         val syncStatus = if (hasRequiredIdentity) "PENDING" else "DEFERRED_IDENTITY"
 
-        val callType = when (callEvent.direction) {
+        val callType = callEvent.callType ?: when (callEvent.direction) {
             CallDirection.INCOMING -> CallLog.Calls.INCOMING_TYPE
             CallDirection.OUTGOING -> CallLog.Calls.OUTGOING_TYPE
             CallDirection.MISSED -> CallLog.Calls.MISSED_TYPE
@@ -245,7 +321,13 @@ class CallProcessingManager(
             durationSeconds = callEvent.durationSeconds,
             isLeadCall = matchingLead != null,
             leadId = matchingLead?.id,
-            notes = if (isUnlinkedInbound) "Unlinked incoming call (Website Call attribution unverified)" else null,
+            notes = if (matchingLead?.id?.startsWith("lead_auto_") == true) {
+                matchingLead.notes
+            } else if (isUnlinkedInbound) {
+                "Unlinked incoming call (Website Call attribution unverified)"
+            } else {
+                null
+            },
             simId = callEvent.simId,
             callOutcome = initialOutcome,
             syncStatus = syncStatus,

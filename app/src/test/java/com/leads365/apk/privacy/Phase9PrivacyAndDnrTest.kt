@@ -292,6 +292,11 @@ class Phase9PrivacyAndDnrTest {
             success = true,
             recordingSyncPaused = false
         )
+        var nextAutoLeadResponse: com.leads365.apk.network.models.AutoLeadPolicyResponse =
+            com.leads365.apk.network.models.AutoLeadPolicyResponse(
+                success = true,
+                data = com.leads365.apk.network.models.AutoLeadPolicyData(autoLeadCaptureEnabled = true, autoLeadMinDurationSeconds = 15)
+            )
         var shouldThrow: Boolean = false
 
         override suspend fun getPolicy(): PolicyResponse {
@@ -302,6 +307,11 @@ class Phase9PrivacyAndDnrTest {
         override suspend fun setPauseSyncState(request: PauseSyncRequest): PauseSyncResponse {
             if (shouldThrow) throw java.io.IOException("Network error")
             return nextPauseResponse
+        }
+
+        override suspend fun setAutoLeadPolicy(request: com.leads365.apk.network.models.AutoLeadPolicyRequest): com.leads365.apk.network.models.AutoLeadPolicyResponse {
+            if (shouldThrow) throw java.io.IOException("Network error")
+            return nextAutoLeadResponse
         }
     }
 }

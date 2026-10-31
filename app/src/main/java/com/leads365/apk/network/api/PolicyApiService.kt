@@ -1,5 +1,7 @@
 package com.leads365.apk.network.api
 
+import com.leads365.apk.network.models.AutoLeadPolicyRequest
+import com.leads365.apk.network.models.AutoLeadPolicyResponse
 import com.leads365.apk.network.models.PauseSyncRequest
 import com.leads365.apk.network.models.PauseSyncResponse
 import com.leads365.apk.network.models.PolicyResponse
@@ -16,4 +18,9 @@ interface PolicyApiService {
     suspend fun setPauseSyncState(
         @Body request: PauseSyncRequest
     ): PauseSyncResponse
+
+    @POST("mobile/v1/policy/auto-lead")
+    suspend fun setAutoLeadPolicy(
+        @Body request: AutoLeadPolicyRequest
+    ): AutoLeadPolicyResponse
 }

@@ -49,7 +49,7 @@ interface LeadDao {
     @Query("DELETE FROM leads WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<String>): Int
 
-    @Query("DELETE FROM leads WHERE id NOT IN (:activeIds)")
+    @Query("DELETE FROM leads WHERE id NOT IN (:activeIds) AND id NOT LIKE 'lead_auto_%'")
     suspend fun retainOnlyActiveLeads(activeIds: List<String>): Int
 
     @Query("SELECT MAX(updatedAtEpochMs) FROM leads")

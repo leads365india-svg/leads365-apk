@@ -51,7 +51,8 @@ fun SettingsScreen(
     onNavigateToDeviceSetup: () -> Unit = {},
     onNavigateToAccount: () -> Unit = {},
     authViewModel: com.leads365.apk.ui.auth.AuthViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
-    diagnosticsViewModel: com.leads365.apk.diagnostics.DiagnosticsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    diagnosticsViewModel: com.leads365.apk.diagnostics.DiagnosticsViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+    privacyViewModel: com.leads365.apk.ui.privacy.PrivacyViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -87,6 +88,24 @@ fun SettingsScreen(
     val testResult by diagnosticsViewModel.testResult.collectAsState()
     val isRunning by diagnosticsViewModel.isRunning.collectAsState()
     val authState by authViewModel.authState.collectAsState()
+
+    val currentTenantId = when (val state = authState) {
+        is com.leads365.apk.data.repository.AuthState.Authenticated -> state.agency?.accountId ?: state.agency?.id
+        else -> null
+    }
+    val autoLeadConfig = androidx.compose.runtime.remember(currentTenantId) {
+        com.leads365.apk.calls.AutoLeadCaptureConfig(context)
+    }
+    var isAutoLeadCreationEnabled by androidx.compose.runtime.remember(currentTenantId) {
+        androidx.compose.runtime.mutableStateOf(
+            autoLeadConfig.isAutoLeadCreationEnabled(currentTenantId)
+        )
+    }
+    var minDurationSeconds by androidx.compose.runtime.remember(currentTenantId) {
+        androidx.compose.runtime.mutableStateOf(
+            autoLeadConfig.getMinDurationSeconds(currentTenantId)
+        )
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -374,6 +393,124 @@ fun SettingsScreen(
                         singleLine = true,
                         shape = RoundedCornerShape(8.dp)
                     )
+                }
+            }
+        }
+
+        // Incoming Call Lead Automation Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Slate200),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Incoming Call Lead Automation",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            color = Navy900
+                        )
+                        Text(
+                            text = "Automatically create a CRM lead and attach the call & audio recording when an unknown incoming call is answered.",
+                            fontSize = 11.sp,
+                            color = Slate600,
+                            lineHeight = 15.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Switch(
+                        checked = isAutoLeadCreationEnabled,
+                        onCheckedChange = { enabled ->
+                            isAutoLeadCreationEnabled = enabled
+                            autoLeadConfig.setAutoLeadCreationEnabled(enabled, currentTenantId)
+                            privacyViewModel.setAutoLeadPolicy(enabled = enabled, tenantId = currentTenantId)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Blue600
+                        )
+                    )
+                }
+
+                if (isAutoLeadCreationEnabled) {
+                    HorizontalDivider(color = Slate200, thickness = 0.5.dp)
+
+                    Text(
+                        text = "Minimum Call Duration Threshold",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = Slate800
+                    )
+                    Text(
+                        text = "Calls shorter than this threshold are treated as accidental and will not trigger lead creation.",
+                        fontSize = 10.5.sp,
+                        color = Slate500
+                    )
+
+                    val durationOptions = listOf(5, 10, 15, 30)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        durationOptions.forEach { seconds ->
+                            val isSelected = minDurationSeconds == seconds
+                            Button(
+                                onClick = {
+                                    minDurationSeconds = seconds
+                                    autoLeadConfig.setMinDurationSeconds(seconds, currentTenantId)
+                                    privacyViewModel.setAutoLeadPolicy(minDurationSeconds = seconds, tenantId = currentTenantId)
+                                },
+                                modifier = Modifier.weight(1f).height(34.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(0.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSelected) Blue600 else Slate100,
+                                    contentColor = if (isSelected) Color.White else Slate700
+                                )
+                            ) {
+                                Text(
+                                    text = "${seconds}s",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        color = TealSuccess.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.5.dp, TealSuccess.copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.CheckCircle,
+                                contentDescription = null,
+                                tint = TealSuccess,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Active: Inbound calls >= ${minDurationSeconds}s will auto-create a provisional CRM lead and upload recordings.",
+                                fontSize = 10.sp,
+                                color = Navy900
+                            )
+                        }
+                    }
                 }
             }
         }

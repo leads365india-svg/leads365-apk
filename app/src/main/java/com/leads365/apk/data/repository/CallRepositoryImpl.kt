@@ -4,6 +4,7 @@ import android.provider.CallLog
 import com.leads365.apk.core.AppError
 import com.leads365.apk.core.AppResult
 import com.leads365.apk.database.dao.CallDao
+import com.leads365.apk.database.dao.LeadDao
 import com.leads365.apk.database.entity.CallEntity
 import com.leads365.apk.network.api.CallApiService
 import com.leads365.apk.network.models.CallReportRequest
@@ -40,7 +41,8 @@ class CallRepositoryImpl(
     private val uploadTaskDao: UploadTaskDao? = null,
     private val recordingDiscoveryCoordinatorProvider: Provider<RecordingDiscoveryCoordinator>? = null,
     private val context: Context? = null,
-    directCoordinator: RecordingDiscoveryCoordinator? = null
+    directCoordinator: RecordingDiscoveryCoordinator? = null,
+    private val leadDao: LeadDao? = null
 ) : CallRepository {
 
     private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -53,7 +55,8 @@ class CallRepositoryImpl(
         tokenProvider: TokenProvider,
         uploadTaskDao: UploadTaskDao,
         recordingDiscoveryCoordinatorProvider: Provider<RecordingDiscoveryCoordinator>,
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        leadDao: LeadDao
     ) : this(
         callDao = callDao,
         callApiService = callApiService,
@@ -61,7 +64,8 @@ class CallRepositoryImpl(
         uploadTaskDao = uploadTaskDao,
         recordingDiscoveryCoordinatorProvider = recordingDiscoveryCoordinatorProvider,
         context = context,
-        directCoordinator = null
+        directCoordinator = null,
+        leadDao = leadDao
     )
 
     constructor(
@@ -235,6 +239,8 @@ class CallRepositoryImpl(
             else -> "OUTGOING"
         }
 
+        val isAutoLead = call.leadId?.startsWith("lead_auto_") == true || call.notes?.contains("Auto-captured") == true
+
         val request = CallReportRequest(
             clientCallId = call.clientCallId,
             leadId = call.leadId ?: "",
@@ -245,13 +251,37 @@ class CallRepositoryImpl(
             callOutcome = call.callOutcome,
             notes = call.notes,
             nextFollowUpAt = call.nextFollowUpEpochMs,
-            simId = call.simId
+            simId = call.simId,
+            autoCreateLead = if (isAutoLead) true else null,
+            callType = call.callType
         )
 
         try {
             val response = callApiService.reportCall(request)
             if (response.success) {
                 callDao.updateSyncStatus(call.id, "SYNCED", null)
+
+                // If backend returned canonical lead_id and this call was an auto-created provisional lead:
+                val serverLeadId = response.leadId
+                val oldLeadId = call.leadId
+                if (!serverLeadId.isNullOrBlank() && oldLeadId != null && oldLeadId.startsWith("lead_auto_") && oldLeadId != serverLeadId) {
+                    try {
+                        callDao.associateCallToLead(call.id, serverLeadId, "SYNCED")
+                        uploadTaskDao?.updateLeadIdForCall(call.id, serverLeadId)
+                        if (leadDao != null) {
+                            val provisional = leadDao.getById(oldLeadId)
+                            if (provisional != null) {
+                                val canonicalLead = provisional.copy(id = serverLeadId)
+                                leadDao.insert(canonicalLead)
+                                leadDao.deleteById(oldLeadId)
+                            }
+                        }
+                        Log.i(TAG, "Provisional lead $oldLeadId upgraded to canonical server lead $serverLeadId for call ${call.id}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error updating local call/task with canonical server lead_id: ${e.message}")
+                    }
+                }
+
                 AppResult.Success(response)
             } else {
                 val errorMsg = response.error ?: response.message ?: "Failed to report call"

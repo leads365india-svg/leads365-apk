@@ -222,7 +222,8 @@ class CallLogReader(
                             endTimeEpochMs = endTime,
                             durationSeconds = durationSec,
                             direction = direction,
-                            simId = simId
+                            simId = simId,
+                            callType = callType
                         )
                     )
                 }

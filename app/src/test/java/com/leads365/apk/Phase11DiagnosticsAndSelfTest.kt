@@ -326,6 +326,12 @@ class FakePolicyRepo(
     override suspend fun syncPolicy(): AppResult<PolicyData> =
         AppResult.Failure(com.leads365.apk.core.AppError.UnknownError("Not implemented"))
     override suspend fun setPauseSyncState(paused: Boolean): AppResult<Boolean> = AppResult.Success(paused)
+    override suspend fun setAutoLeadPolicy(
+        enabled: Boolean?,
+        minDurationSeconds: Int?,
+        tenantId: String?
+    ): AppResult<com.leads365.apk.network.models.AutoLeadPolicyData> =
+        AppResult.Success(com.leads365.apk.network.models.AutoLeadPolicyData(enabled ?: false, minDurationSeconds ?: 10))
     override fun acknowledgeConsent() {}
     override fun isConsentAcknowledged(): Boolean = acknowledged
     override fun isRecordingSyncPaused(): Boolean = paused

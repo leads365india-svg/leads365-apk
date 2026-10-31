@@ -22,7 +22,8 @@ import javax.inject.Singleton
 @Singleton
 class PolicyRepositoryImpl @Inject constructor(
     private val policyApiService: PolicyApiService,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val autoLeadCaptureConfig: com.leads365.apk.calls.AutoLeadCaptureConfig? = null
 ) : PolicyRepository {
 
     private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -31,9 +32,14 @@ class PolicyRepositoryImpl @Inject constructor(
     constructor(
         policyApiService: PolicyApiService,
         context: Context,
-        dispatcher: CoroutineDispatcher
-    ) : this(policyApiService, context) {
+        dispatcher: CoroutineDispatcher,
+        autoLeadCaptureConfig: com.leads365.apk.calls.AutoLeadCaptureConfig? = null
+    ) : this(policyApiService, context, autoLeadCaptureConfig) {
         this.ioDispatcher = dispatcher
+    }
+
+    private val leadConfig by lazy {
+        autoLeadCaptureConfig ?: com.leads365.apk.calls.AutoLeadCaptureConfig(context)
     }
 
     private val prefs by lazy {
@@ -57,6 +63,8 @@ class PolicyRepositoryImpl @Inject constructor(
 
             val data = response.data
             cachePolicyData(data)
+            leadConfig.setAutoLeadCreationEnabled(data.autoLeadCaptureEnabled, data.agencyId)
+            leadConfig.setMinDurationSeconds(data.autoLeadMinDurationSeconds, data.agencyId)
 
             val updated = CachedPolicy(
                 agencyId = data.agencyId,
@@ -66,11 +74,13 @@ class PolicyRepositoryImpl @Inject constructor(
                 allowRecordingPause = data.allowRecordingPause,
                 recordingSyncPaused = data.recordingSyncPaused,
                 enforceStrictDnr = data.enforceStrictDnr,
+                autoLeadCaptureEnabled = data.autoLeadCaptureEnabled,
+                autoLeadMinDurationSeconds = data.autoLeadMinDurationSeconds,
                 lastSyncEpochMs = System.currentTimeMillis()
             )
             _policyState.value = updated
 
-            Log.d(TAG, "Policy synced: agency=${data.agencyName}, dnr=${data.enforceStrictDnr}, paused=${data.recordingSyncPaused}")
+            Log.d(TAG, "Policy synced: agency=${data.agencyName}, dnr=${data.enforceStrictDnr}, autoLead=${data.autoLeadCaptureEnabled}")
             AppResult.Success(data)
         } catch (e: HttpException) {
             val code = e.code()
@@ -110,6 +120,50 @@ class PolicyRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun setAutoLeadPolicy(
+        enabled: Boolean?,
+        minDurationSeconds: Int?,
+        tenantId: String?
+    ): AppResult<com.leads365.apk.network.models.AutoLeadPolicyData> = withContext(ioDispatcher) {
+        try {
+            val response = policyApiService.setAutoLeadPolicy(
+                com.leads365.apk.network.models.AutoLeadPolicyRequest(
+                    enabled = enabled,
+                    minDurationSeconds = minDurationSeconds
+                )
+            )
+            if (!response.success || response.data == null) {
+                return@withContext AppResult.Failure(
+                    AppError.NetworkError(response.error ?: response.message ?: "Failed to update auto-lead policy")
+                )
+            }
+
+            val policyData = response.data
+            leadConfig.setAutoLeadCreationEnabled(policyData.autoLeadCaptureEnabled, tenantId)
+            leadConfig.setMinDurationSeconds(policyData.autoLeadMinDurationSeconds, tenantId)
+
+            prefs.edit()
+                .putBoolean(KEY_AUTO_LEAD_ENABLED, policyData.autoLeadCaptureEnabled)
+                .putInt(KEY_AUTO_LEAD_MIN_DURATION, policyData.autoLeadMinDurationSeconds)
+                .apply()
+
+            val current = _policyState.value
+            _policyState.value = current.copy(
+                autoLeadCaptureEnabled = policyData.autoLeadCaptureEnabled,
+                autoLeadMinDurationSeconds = policyData.autoLeadMinDurationSeconds
+            )
+
+            Log.d(TAG, "Auto-lead policy updated: enabled=${policyData.autoLeadCaptureEnabled}, minDuration=${policyData.autoLeadMinDurationSeconds}s")
+            AppResult.Success(policyData)
+        } catch (e: HttpException) {
+            AppResult.Failure(AppError.NetworkError("Server error ${e.code()} setting auto-lead policy", httpCode = e.code(), cause = e))
+        } catch (e: IOException) {
+            AppResult.Failure(AppError.NetworkError("Network unavailable.", cause = e))
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.UnknownError("Unexpected error setting auto-lead policy: ${e.message}", e))
+        }
+    }
+
     override fun acknowledgeConsent() {
         prefs.edit().putBoolean(KEY_CONSENT_ACK, true).apply()
         _consentAcknowledged.value = true
@@ -131,6 +185,8 @@ class PolicyRepositoryImpl @Inject constructor(
             .putBoolean(KEY_ALLOW_PAUSE, data.allowRecordingPause)
             .putBoolean(KEY_SYNC_PAUSED, data.recordingSyncPaused)
             .putBoolean(KEY_STRICT_DNR, data.enforceStrictDnr)
+            .putBoolean(KEY_AUTO_LEAD_ENABLED, data.autoLeadCaptureEnabled)
+            .putInt(KEY_AUTO_LEAD_MIN_DURATION, data.autoLeadMinDurationSeconds)
             .putLong(KEY_LAST_SYNC, System.currentTimeMillis())
             .apply()
     }
@@ -144,6 +200,8 @@ class PolicyRepositoryImpl @Inject constructor(
             allowRecordingPause = prefs.getBoolean(KEY_ALLOW_PAUSE, true),
             recordingSyncPaused = prefs.getBoolean(KEY_SYNC_PAUSED, false),
             enforceStrictDnr = prefs.getBoolean(KEY_STRICT_DNR, true),
+            autoLeadCaptureEnabled = prefs.getBoolean(KEY_AUTO_LEAD_ENABLED, false),
+            autoLeadMinDurationSeconds = prefs.getInt(KEY_AUTO_LEAD_MIN_DURATION, 10),
             lastSyncEpochMs = prefs.getLong(KEY_LAST_SYNC, 0L)
         )
     }
@@ -158,6 +216,8 @@ class PolicyRepositoryImpl @Inject constructor(
         private const val KEY_ALLOW_PAUSE = "key_allow_pause"
         private const val KEY_SYNC_PAUSED = "key_sync_paused"
         private const val KEY_STRICT_DNR = "key_strict_dnr"
+        private const val KEY_AUTO_LEAD_ENABLED = "key_auto_lead_enabled"
+        private const val KEY_AUTO_LEAD_MIN_DURATION = "key_auto_lead_min_duration"
         private const val KEY_LAST_SYNC = "key_last_policy_sync"
         private const val KEY_CONSENT_ACK = "key_consent_acknowledged"
     }

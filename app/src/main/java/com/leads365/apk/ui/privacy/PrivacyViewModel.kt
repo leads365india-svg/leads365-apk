@@ -126,4 +126,28 @@ class PrivacyViewModel @Inject constructor(
             )
         }
     }
+
+    /**
+     * Persist auto lead capture toggle or duration threshold to backend and update cache.
+     */
+    fun setAutoLeadPolicy(
+        enabled: Boolean? = null,
+        minDurationSeconds: Int? = null,
+        tenantId: String? = null
+    ) {
+        viewModelScope.launch {
+            when (val result = policyRepository.setAutoLeadPolicy(enabled, minDurationSeconds, tenantId)) {
+                is AppResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        successMessage = "Auto-lead capture settings updated"
+                    )
+                }
+                is AppResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = result.error.message
+                    )
+                }
+            }
+        }
+    }
 }

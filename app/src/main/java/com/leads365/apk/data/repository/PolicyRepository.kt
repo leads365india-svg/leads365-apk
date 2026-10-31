@@ -15,6 +15,8 @@ data class CachedPolicy(
     val allowRecordingPause: Boolean = true,
     val recordingSyncPaused: Boolean = false,
     val enforceStrictDnr: Boolean = true,
+    val autoLeadCaptureEnabled: Boolean = false,
+    val autoLeadMinDurationSeconds: Int = 10,
     val lastSyncEpochMs: Long = 0L
 )
 
@@ -27,6 +29,13 @@ interface PolicyRepository {
 
     /** Toggle recording sync pause state on the server and update local cache. */
     suspend fun setPauseSyncState(paused: Boolean): AppResult<Boolean>
+
+    /** Persist auto lead creation configuration through authenticated backend API and cache locally. */
+    suspend fun setAutoLeadPolicy(
+        enabled: Boolean? = null,
+        minDurationSeconds: Int? = null,
+        tenantId: String? = null
+    ): AppResult<com.leads365.apk.network.models.AutoLeadPolicyData>
 
     /** Mark first-run privacy consent as acknowledged by the user. */
     fun acknowledgeConsent()

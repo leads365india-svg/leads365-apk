@@ -17,7 +17,8 @@ data class CallEvent(
     val endTimeEpochMs: Long,
     val durationSeconds: Long,
     val direction: CallDirection,
-    val simId: String? = null
+    val simId: String? = null,
+    val callType: Int? = null
 )
 
 data class TestLead(

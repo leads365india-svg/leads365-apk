@@ -14,13 +14,17 @@ data class CallReportRequest(
     @SerialName("call_outcome") val callOutcome: String? = null,
     val notes: String? = null,
     @SerialName("next_followup_at") val nextFollowUpAt: Long? = null,
-    @SerialName("sim_id") val simId: String? = null
+    @SerialName("sim_id") val simId: String? = null,
+    @SerialName("auto_create_lead") val autoCreateLead: Boolean? = null,
+    @SerialName("call_type") val callType: Int? = null
 )
 
 @Serializable
 data class CallReportResponse(
     val success: Boolean = true,
     @SerialName("call_id") val callId: String? = null,
+    @SerialName("lead_id") val leadId: String? = null,
+    @SerialName("auto_lead_created") val autoLeadCreated: Boolean? = null,
     val message: String? = null,
     val error: String? = null
 )
