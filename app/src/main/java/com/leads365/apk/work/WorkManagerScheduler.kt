@@ -33,6 +33,15 @@ open class WorkManagerScheduler @Inject constructor(
         fileUri: String,
         callId: String? = null
     ) {
+        scheduleUploadTask(taskId, fileUri, callId, ExistingWorkPolicy.KEEP)
+    }
+
+    open fun scheduleUploadTask(
+        taskId: String,
+        fileUri: String,
+        callId: String?,
+        policy: ExistingWorkPolicy
+    ) {
         val prefs = context.getSharedPreferences(RecordingUploadWorker.PREFS_NAME, Context.MODE_PRIVATE)
         val wifiOnly = prefs.getBoolean(RecordingUploadWorker.PREF_UPLOAD_WIFI_ONLY, false)
         val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
@@ -61,15 +70,15 @@ open class WorkManagerScheduler @Inject constructor(
             .addTag("task_$taskId")
             .build()
 
-        // Phase 12: Use KEEP to prevent duplicate scheduling of active upload work
+        // Enqueue with configured policy (KEEP for normal scheduling, REPLACE when constraints/settings change)
         workManager.enqueueUniqueWork(
             "${RecordingUploadWorker.WORK_NAME_PREFIX}$resolvedCallId",
-            ExistingWorkPolicy.KEEP,
+            policy,
             uploadRequest
         )
     }
 
-    open suspend fun resumePendingUploads(): Int {
+    open suspend fun resumePendingUploads(policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP): Int {
         val repo = uploadQueueRepository
         if (repo == null) {
             Log.d(TAG, "UploadQueueRepository not provided in scheduler; skipping upload resumption")
@@ -104,12 +113,20 @@ open class WorkManagerScheduler @Inject constructor(
         val allToResume = (pending + retryWait).distinctBy { it.id }
 
         for (task in allToResume) {
-            scheduleUploadTask(task.id, task.localFileUri, task.callId)
+            if (policy == ExistingWorkPolicy.KEEP) {
+                scheduleUploadTask(task.id, task.localFileUri, task.callId)
+            } else {
+                scheduleUploadTask(task.id, task.localFileUri, task.callId, policy = policy)
+            }
             resumedCount++
         }
 
-        Log.i(TAG, "Resumed $resumedCount pending/retryable upload tasks safely into WorkManager")
+        Log.i(TAG, "Resumed $resumedCount pending/retryable upload tasks safely into WorkManager (policy=$policy)")
         return resumedCount
+    }
+
+    open suspend fun rescheduleAllPendingUploads(): Int {
+        return resumePendingUploads(policy = ExistingWorkPolicy.REPLACE)
     }
 
     fun getWorkInfosByTagFlow(tag: String): Flow<List<WorkInfo>> {

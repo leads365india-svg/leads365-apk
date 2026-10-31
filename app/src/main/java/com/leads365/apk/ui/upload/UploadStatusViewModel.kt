@@ -3,9 +3,12 @@ package com.leads365.apk.ui.upload
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
 import com.leads365.apk.data.repository.UploadQueueRepository
 import com.leads365.apk.database.entity.UploadTaskEntity
+import com.leads365.apk.network.NetworkConnectivityMonitor
 import com.leads365.apk.work.RecordingUploadWorker
+import com.leads365.apk.work.WorkManagerScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,14 +16,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class UploadStatusViewModel @Inject constructor(
     private val uploadQueueRepository: UploadQueueRepository,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val workManagerScheduler: WorkManagerScheduler? = null,
+    private val networkConnectivityMonitor: NetworkConnectivityMonitor? = null
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences(RecordingUploadWorker.PREFS_NAME, Context.MODE_PRIVATE)
@@ -30,8 +34,8 @@ class UploadStatusViewModel @Inject constructor(
     )
     val wifiOnly: StateFlow<Boolean> = _wifiOnly.asStateFlow()
 
-    private val _selectedTaskIds = MutableStateFlow<Set<String>>(emptySet())
-    val selectedTaskIds: StateFlow<Set<String>> = _selectedTaskIds.asStateFlow()
+    val isWifiConnected: StateFlow<Boolean> = networkConnectivityMonitor?.isWifiConnected
+        ?: MutableStateFlow(false).asStateFlow()
 
     val tasks: StateFlow<List<UploadTaskEntity>> = uploadQueueRepository.getAllTasksFlow()
         .stateIn(
@@ -49,48 +53,24 @@ class UploadStatusViewModel @Inject constructor(
                 task.status == UploadTaskEntity.STATUS_FAILED
     }
 
-    fun toggleTaskSelection(taskId: String) {
-        _selectedTaskIds.update { current ->
-            if (current.contains(taskId)) current - taskId else current + taskId
-        }
-    }
-
-    fun selectAllEligible() {
-        val eligibleIds = tasks.value.filter { isTaskEligibleForUpload(it) }.map { it.id }.toSet()
-        _selectedTaskIds.value = eligibleIds
-    }
-
-    fun clearSelection() {
-        _selectedTaskIds.value = emptySet()
-    }
-
-    fun uploadSelectedTasks() {
-        val selected = _selectedTaskIds.value
-        if (selected.isEmpty()) return
-        val currentTasks = tasks.value.associateBy { it.id }
-
-        viewModelScope.launch {
-            for (taskId in selected) {
-                val task = currentTasks[taskId] ?: continue
-                if (!isTaskEligibleForUpload(task)) continue
-
-                // Update to queued and enqueue unique WorkManager upload job
-                uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_FILE_FOUND, null)
-                RecordingUploadWorker.enqueueUniqueUpload(context, task.id, task.callId)
-            }
-            clearSelection()
-        }
-    }
-
     fun setWifiOnly(enabled: Boolean) {
         prefs.edit().putBoolean(RecordingUploadWorker.PREF_UPLOAD_WIFI_ONLY, enabled).apply()
         _wifiOnly.value = enabled
+        // Reschedule all pending and retryable uploads with the updated network constraints
+        viewModelScope.launch {
+            workManagerScheduler?.rescheduleAllPendingUploads()
+        }
     }
 
     fun retryTask(task: UploadTaskEntity) {
         viewModelScope.launch {
-            uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_FILE_FOUND, null)
-            RecordingUploadWorker.enqueueUniqueUpload(context, task.id, task.callId)
+            uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATUS_PENDING, null)
+            RecordingUploadWorker.enqueueUniqueUpload(
+                context = context,
+                taskId = task.id,
+                callId = task.callId,
+                policy = ExistingWorkPolicy.REPLACE
+            )
         }
     }
 

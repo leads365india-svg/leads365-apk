@@ -111,24 +111,15 @@ class UploadSelectionAndStartupOptimizationTest {
     }
 
     @Test
-    fun `test selection toggle and clear actions update selectedTaskIds correctly`() {
+    fun `test wifiOnly setting updates preference and state correctly`() {
         val fakeRepo = createFakeUploadQueueRepo()
         val viewModel = UploadStatusViewModel(fakeRepo, context)
 
-        assertTrue(viewModel.selectedTaskIds.value.isEmpty())
+        viewModel.setWifiOnly(true)
+        assertTrue(viewModel.wifiOnly.value)
 
-        viewModel.toggleTaskSelection("task-1")
-        assertEquals(setOf("task-1"), viewModel.selectedTaskIds.value)
-
-        viewModel.toggleTaskSelection("task-2")
-        assertEquals(setOf("task-1", "task-2"), viewModel.selectedTaskIds.value)
-
-        // Toggling again deselects
-        viewModel.toggleTaskSelection("task-1")
-        assertEquals(setOf("task-2"), viewModel.selectedTaskIds.value)
-
-        viewModel.clearSelection()
-        assertTrue(viewModel.selectedTaskIds.value.isEmpty())
+        viewModel.setWifiOnly(false)
+        assertFalse(viewModel.wifiOnly.value)
     }
 
     @Test

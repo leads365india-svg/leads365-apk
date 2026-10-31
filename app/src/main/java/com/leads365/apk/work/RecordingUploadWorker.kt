@@ -109,8 +109,8 @@ class RecordingUploadWorker(
         // 3. Wi-Fi Only Preference Check
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val wifiOnly = prefs.getBoolean(PREF_UPLOAD_WIFI_ONLY, false)
-        if (wifiOnly && isMeteredConnection(applicationContext)) {
-            Log.i(TAG, "Upload preference is Wi-Fi only, but network is metered. Transitioning to RETRY_WAIT.")
+        if (wifiOnly && !isWifiConnectedAndUnmetered(applicationContext)) {
+            Log.i(TAG, "Upload preference is Wi-Fi only, but network is metered or not Wi-Fi. Transitioning task ${task.id} to RETRY_WAIT.")
             uploadQueueRepository.updateStatus(
                 task.id,
                 UploadTaskEntity.STATE_RETRY_WAIT,
@@ -201,12 +201,7 @@ class RecordingUploadWorker(
         }
     }
 
-    private fun isMeteredConnection(context: Context): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val activeNetwork = cm.activeNetwork ?: return true
-        val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return true
-        return !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-    }
+    // Replaced by companion object isWifiConnectedAndUnmetered(context)
 
     private fun showNotification(context: Context, fileName: String, message: String, isComplete: Boolean = false) {
         try {
@@ -251,6 +246,15 @@ class RecordingUploadWorker(
         const val PREF_UPLOAD_WIFI_ONLY = "pref_upload_wifi_only"
         const val NOTIFICATION_CHANNEL_ID = "channel_recording_uploads"
         const val NOTIFICATION_ID = 2001
+
+        fun isWifiConnectedAndUnmetered(context: Context): Boolean {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+            val activeNetwork = cm.activeNetwork ?: return false
+            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
+            val hasWifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            val isNotMetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+            return hasWifi && isNotMetered
+        }
 
         fun enqueueUniqueUpload(
             context: Context,

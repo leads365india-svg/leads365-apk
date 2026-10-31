@@ -1,6 +1,5 @@
 package com.leads365.apk.ui.upload
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,7 +35,7 @@ fun UploadStatusScreen(
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val wifiOnly by viewModel.wifiOnly.collectAsState()
-    val selectedTaskIds by viewModel.selectedTaskIds.collectAsState()
+    val isWifiConnected by viewModel.isWifiConnected.collectAsState()
 
     val uploadedCount = tasks.count {
         it.status == UploadTaskEntity.STATE_UPLOADED || it.status == UploadTaskEntity.STATUS_COMPLETED
@@ -44,8 +43,9 @@ fun UploadStatusScreen(
     val inProgressCount = tasks.count {
         it.status == UploadTaskEntity.STATE_UPLOADING || it.status == UploadTaskEntity.STATUS_IN_PROGRESS
     }
-    val eligibleTasks = tasks.filter { viewModel.isTaskEligibleForUpload(it) }
-    val selectedCount = selectedTaskIds.size
+    val waitingWifiCount = tasks.count {
+        isWaitingForWifi(it, wifiOnly, isWifiConnected)
+    }
 
     Scaffold(
         topBar = {
@@ -58,8 +58,13 @@ fun UploadStatusScreen(
                             fontSize = 18.sp,
                             color = Navy900
                         )
+                        val subtitle = if (waitingWifiCount > 0) {
+                            "${tasks.size} records • $uploadedCount uploaded • $waitingWifiCount waiting for Wi-Fi"
+                        } else {
+                            "${tasks.size} records • $uploadedCount uploaded • $inProgressCount uploading"
+                        }
                         Text(
-                            text = "${tasks.size} records • $uploadedCount uploaded • $inProgressCount uploading",
+                            text = subtitle,
                             fontSize = 11.sp,
                             color = TextSecondaryLight
                         )
@@ -120,76 +125,20 @@ fun UploadStatusScreen(
                                 fontSize = 14.sp,
                                 color = Navy900
                             )
+                            Text(
+                                text = if (wifiOnly) {
+                                    "Recordings pause safely on mobile data and upload on Wi-Fi"
+                                } else {
+                                    "Recordings upload automatically over any connected network"
+                                },
+                                fontSize = 11.sp,
+                                color = TextSecondaryLight
+                            )
                         }
                         Switch(
                             checked = wifiOnly,
                             onCheckedChange = { viewModel.setWifiOnly(it) }
                         )
-                    }
-                }
-            }
-
-            // Selection & Batch Action Toolbar (only displayed when tasks exist)
-            if (tasks.isNotEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = Slate100),
-                        border = BorderStroke(1.dp, Slate200)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    if (selectedCount == eligibleTasks.size && eligibleTasks.isNotEmpty()) {
-                                        viewModel.clearSelection()
-                                    } else {
-                                        viewModel.selectAllEligible()
-                                    }
-                                },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = if (selectedCount == eligibleTasks.size && eligibleTasks.isNotEmpty()) {
-                                        "Deselect All"
-                                    } else {
-                                        "Select All Eligible (${eligibleTasks.size})"
-                                    },
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Blue600
-                                )
-                            }
-
-                            Button(
-                                onClick = { viewModel.uploadSelectedTasks() },
-                                enabled = selectedCount > 0,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Blue600,
-                                    disabledContainerColor = Slate300
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudUpload,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (selectedCount > 0) "Upload Selected ($selectedCount)" else "Upload Selected",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -230,14 +179,10 @@ fun UploadStatusScreen(
                 }
             } else {
                 items(tasks, key = { it.id }) { task ->
-                    val isEligible = viewModel.isTaskEligibleForUpload(task)
-                    val isSelected = selectedTaskIds.contains(task.id)
-
                     UploadTaskCard(
                         task = task,
-                        isEligible = isEligible,
-                        isSelected = isSelected,
-                        onToggleSelect = { viewModel.toggleTaskSelection(task.id) },
+                        wifiOnly = wifiOnly,
+                        isWifiConnected = isWifiConnected,
                         onRetry = { viewModel.retryTask(task) }
                     )
                 }
@@ -249,14 +194,12 @@ fun UploadStatusScreen(
 @Composable
 fun UploadTaskCard(
     task: UploadTaskEntity,
-    isEligible: Boolean = true,
-    isSelected: Boolean = false,
-    onToggleSelect: () -> Unit = {},
+    wifiOnly: Boolean,
+    isWifiConnected: Boolean,
     onRetry: () -> Unit
 ) {
     val dateStr = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(task.updatedAtEpochMs))
-
-    val (badgeBg, badgeFg, badgeText, badgeIcon) = getBadgeAttributes(task.status)
+    val (badgeBg, badgeFg, badgeText, badgeIcon) = getBadgeAttributes(task, wifiOnly, isWifiConnected)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -270,7 +213,7 @@ fun UploadTaskCard(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Header Row: Checkbox, File Name & Status Badge
+            // Header Row: Status Icon, File Name & Status Badge (NO CHECKBOX)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -281,14 +224,6 @@ fun UploadTaskCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isEligible) {
-                        Checkbox(
-                            checked = isSelected,
-                            onCheckedChange = { onToggleSelect() },
-                            colors = CheckboxDefaults.colors(checkedColor = Blue600)
-                        )
-                    }
-
                     Box(
                         modifier = Modifier
                             .size(36.dp)
@@ -356,7 +291,7 @@ fun UploadTaskCard(
                 Text(
                     text = "Reason: ${task.lastError}",
                     fontSize = 11.sp,
-                    color = RedDanger,
+                    color = if (badgeText == "Waiting for Wi-Fi") Color(0xFFD97706) else RedDanger,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -365,7 +300,6 @@ fun UploadTaskCard(
             val isRetryable = task.status == UploadTaskEntity.STATE_RETRY_WAIT ||
                     task.status == UploadTaskEntity.STATE_FAILED_PERMANENT ||
                     task.status == UploadTaskEntity.STATE_REJECTED_BY_SERVER ||
-                    task.status == UploadTaskEntity.STATE_FILE_FOUND ||
                     task.status == UploadTaskEntity.STATUS_FAILED
 
             if (isRetryable || task.retryCount > 0) {
@@ -405,79 +339,99 @@ fun UploadTaskCard(
     }
 }
 
-private fun getBadgeAttributes(status: String): Quadruple<Color, Color, String, ImageVector> {
-    return when (status) {
-        UploadTaskEntity.STATE_UPLOADED,
-        UploadTaskEntity.STATUS_COMPLETED -> Quadruple(
+fun isWaitingForWifi(task: UploadTaskEntity, wifiOnly: Boolean, isWifiConnected: Boolean): Boolean {
+    if (!wifiOnly) return false
+    val isPendingOrRetry = task.status == UploadTaskEntity.STATE_RETRY_WAIT ||
+            task.status == UploadTaskEntity.STATUS_PENDING ||
+            task.status == UploadTaskEntity.STATE_FILE_FOUND
+    val reasonMentionsWifi = task.lastError?.contains("Wi-Fi", ignoreCase = true) == true
+    return isPendingOrRetry && (!isWifiConnected || reasonMentionsWifi)
+}
+
+fun getBadgeAttributes(
+    task: UploadTaskEntity,
+    wifiOnly: Boolean,
+    isWifiConnected: Boolean
+): UploadBadgeAttributes {
+    // 1. Uploaded
+    if (task.status == UploadTaskEntity.STATE_UPLOADED || task.status == UploadTaskEntity.STATUS_COMPLETED) {
+        return UploadBadgeAttributes(
             TealSuccess.copy(alpha = 0.15f),
             TealSuccess,
             "Uploaded",
             Icons.Default.CheckCircle
         )
-        UploadTaskEntity.STATE_UPLOADING,
-        UploadTaskEntity.STATUS_IN_PROGRESS -> Quadruple(
+    }
+
+    // 2. Uploading
+    if (task.status == UploadTaskEntity.STATE_UPLOADING || task.status == UploadTaskEntity.STATUS_IN_PROGRESS) {
+        return UploadBadgeAttributes(
             BlueAccent.copy(alpha = 0.15f),
             BlueAccent,
             "Uploading",
             Icons.Default.CloudUpload
         )
-        UploadTaskEntity.STATE_RETRY_WAIT -> Quadruple(
+    }
+
+    // 3. Waiting for Wi-Fi
+    if (isWaitingForWifi(task, wifiOnly, isWifiConnected)) {
+        return UploadBadgeAttributes(
             Color(0xFFFEF3C7),
             Color(0xFFD97706),
-            "Retry Wait",
-            Icons.Default.Schedule
+            "Waiting for Wi-Fi",
+            Icons.Default.WifiOff
         )
-        UploadTaskEntity.STATE_FILE_FOUND,
-        UploadTaskEntity.STATUS_PENDING -> Quadruple(
+    }
+
+    // 4. Queued
+    if (task.status == UploadTaskEntity.STATE_FILE_FOUND ||
+        task.status == UploadTaskEntity.STATUS_PENDING
+    ) {
+        return UploadBadgeAttributes(
             BlueAccent.copy(alpha = 0.1f),
             BlueAccent,
             "Queued",
             Icons.Default.Schedule
         )
-        UploadTaskEntity.STATE_REJECTED_BY_SERVER -> Quadruple(
-            RedDanger.copy(alpha = 0.15f),
-            RedDanger,
-            "Rejected",
-            Icons.Default.Block
-        )
-        UploadTaskEntity.STATE_FAILED_PERMANENT,
-        UploadTaskEntity.STATUS_FAILED -> Quadruple(
+    }
+
+    // 5. Failed (with retry)
+    if (task.status == UploadTaskEntity.STATE_FAILED_PERMANENT ||
+        task.status == UploadTaskEntity.STATUS_FAILED ||
+        task.status == UploadTaskEntity.STATE_REJECTED_BY_SERVER
+    ) {
+        return UploadBadgeAttributes(
             RedDanger.copy(alpha = 0.15f),
             RedDanger,
             "Failed",
             Icons.Default.ErrorOutline
         )
-        UploadTaskEntity.STATE_NO_FILE_FOUND -> Quadruple(
-            Color(0xFFF1F5F9),
-            TextSecondaryLight,
-            "No File Found",
-            Icons.Default.Info
-        )
-        UploadTaskEntity.STATE_AMBIGUOUS -> Quadruple(
+    }
+
+    if (task.status == UploadTaskEntity.STATE_RETRY_WAIT) {
+        return UploadBadgeAttributes(
             Color(0xFFFEF3C7),
             Color(0xFFD97706),
-            "Ambiguous",
-            Icons.Default.Warning
-        )
-        UploadTaskEntity.STATE_SKIPPED_DNR -> Quadruple(
-            Color(0xFFF1F5F9),
-            TextSecondaryLight,
-            "DNR Skipped",
-            Icons.Default.Close
-        )
-        UploadTaskEntity.STATE_SKIPPED_NOT_LEAD -> Quadruple(
-            Color(0xFFF1F5F9),
-            TextSecondaryLight,
-            "Not Lead",
-            Icons.Default.Close
-        )
-        else -> Quadruple(
-            Color(0xFFF1F5F9),
-            TextSecondaryLight,
-            status,
-            Icons.Default.Info
+            "Queued",
+            Icons.Default.Schedule
         )
     }
+
+    // Side states
+    if (task.status == UploadTaskEntity.STATE_SKIPPED_DNR) {
+        return UploadBadgeAttributes(Color(0xFFF1F5F9), TextSecondaryLight, "DNR Skipped", Icons.Default.Close)
+    }
+    if (task.status == UploadTaskEntity.STATE_SKIPPED_NOT_LEAD) {
+        return UploadBadgeAttributes(Color(0xFFF1F5F9), TextSecondaryLight, "Not Lead", Icons.Default.Close)
+    }
+    if (task.status == UploadTaskEntity.STATE_NO_FILE_FOUND) {
+        return UploadBadgeAttributes(Color(0xFFF1F5F9), TextSecondaryLight, "No File Found", Icons.Default.Info)
+    }
+    if (task.status == UploadTaskEntity.STATE_AMBIGUOUS) {
+        return UploadBadgeAttributes(Color(0xFFFEF3C7), Color(0xFFD97706), "Ambiguous", Icons.Default.Warning)
+    }
+
+    return UploadBadgeAttributes(Color(0xFFF1F5F9), TextSecondaryLight, task.status, Icons.Default.Info)
 }
 
 private fun formatFileSize(bytes: Long): String {
@@ -491,9 +445,9 @@ private fun formatFileSize(bytes: Long): String {
     }
 }
 
-private data class Quadruple<A, B, C, D>(
-    val first: A,
-    val second: B,
-    val third: C,
-    val fourth: D
+data class UploadBadgeAttributes(
+    val containerColor: Color,
+    val contentColor: Color,
+    val text: String,
+    val icon: ImageVector
 )

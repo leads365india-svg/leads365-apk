@@ -34,7 +34,7 @@ interface UploadTaskDao {
     @Query("SELECT * FROM upload_tasks WHERE status = :status ORDER BY createdAtEpochMs ASC")
     suspend fun getTasksByStatus(status: String): List<UploadTaskEntity>
 
-    @Query("SELECT * FROM upload_tasks WHERE status = 'PENDING' ORDER BY createdAtEpochMs ASC")
+    @Query("SELECT * FROM upload_tasks WHERE status IN ('PENDING', 'FILE_FOUND') ORDER BY createdAtEpochMs ASC")
     suspend fun getPendingTasks(): List<UploadTaskEntity>
 
     @Query("SELECT * FROM upload_tasks ORDER BY updatedAtEpochMs DESC")
