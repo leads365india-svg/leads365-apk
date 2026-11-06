@@ -239,7 +239,10 @@ class CallRepositoryImpl(
             else -> "OUTGOING"
         }
 
-        val isAutoLead = call.leadId?.startsWith("lead_auto_") == true || call.notes?.contains("Auto-captured") == true
+        val isAutoLead = call.leadId?.startsWith("lead_auto_") == true ||
+            call.notes?.contains("Auto-captured") == true ||
+            call.notes?.contains("Unlinked incoming call") == true ||
+            (call.callType == CallLog.Calls.INCOMING_TYPE && (call.leadId.isNullOrBlank() || call.leadId == "unlinked"))
 
         val request = CallReportRequest(
             clientCallId = call.clientCallId,
@@ -260,25 +263,59 @@ class CallRepositoryImpl(
             val response = callApiService.reportCall(request)
             if (response.success) {
                 callDao.updateSyncStatus(call.id, "SYNCED", null)
+                callDao.updateSyncStatus(call.clientCallId, "SYNCED", null)
 
                 // If backend returned canonical lead_id and this call was an auto-created provisional lead:
                 val serverLeadId = response.leadId
                 val oldLeadId = call.leadId
-                if (!serverLeadId.isNullOrBlank() && oldLeadId != null && oldLeadId.startsWith("lead_auto_") && oldLeadId != serverLeadId) {
+                if (!serverLeadId.isNullOrBlank() && oldLeadId != serverLeadId) {
                     try {
                         callDao.associateCallToLead(call.id, serverLeadId, "SYNCED")
+                        callDao.associateCallToLead(call.clientCallId, serverLeadId, "SYNCED")
                         uploadTaskDao?.updateLeadIdForCall(call.id, serverLeadId)
+                        uploadTaskDao?.updateLeadIdForCall(call.clientCallId, serverLeadId)
                         if (leadDao != null) {
-                            val provisional = leadDao.getById(oldLeadId)
-                            if (provisional != null) {
+                            val provisional = if (!oldLeadId.isNullOrBlank() && oldLeadId != "unlinked") leadDao.getById(oldLeadId) else null
+                            if (provisional != null && !oldLeadId.isNullOrBlank()) {
                                 val canonicalLead = provisional.copy(id = serverLeadId)
                                 leadDao.insert(canonicalLead)
                                 leadDao.deleteById(oldLeadId)
+                            } else {
+                                val newLead = LeadEntity(
+                                    id = serverLeadId,
+                                    name = "Unknown Caller - ${call.normalizedNumber}",
+                                    rawNumber = call.rawNumber,
+                                    normalizedNumber = call.normalizedNumber,
+                                    status = "New",
+                                    isDoNotRecord = false,
+                                    notes = call.notes ?: "Auto-captured from answered incoming call",
+                                    createdAtEpochMs = call.startTimeEpochMs,
+                                    updatedAtEpochMs = System.currentTimeMillis()
+                                )
+                                leadDao.insert(newLead)
                             }
                         }
-                        Log.i(TAG, "Provisional lead $oldLeadId upgraded to canonical server lead $serverLeadId for call ${call.id}")
+                        Log.i(TAG, "Upgraded call ${call.id} to canonical server lead $serverLeadId")
                     } catch (e: Exception) {
                         Log.w(TAG, "Error updating local call/task with canonical server lead_id: ${e.message}")
+                    }
+                }
+
+                // If this call has a recording upload task, trigger upload now that lead is confirmed on backend!
+                if (uploadTaskDao != null && context != null) {
+                    try {
+                        val task = uploadTaskDao.getByCallId(call.clientCallId)
+                            ?: uploadTaskDao.getByCallId(call.id)
+                        if (task != null && task.status != UploadTaskEntity.STATE_UPLOADED && task.status != UploadTaskEntity.STATUS_COMPLETED) {
+                            if (!serverLeadId.isNullOrBlank()) {
+                                uploadTaskDao.updateLeadIdForCall(call.id, serverLeadId)
+                                uploadTaskDao.updateLeadIdForCall(call.clientCallId, serverLeadId)
+                            }
+                            RecordingUploadWorker.enqueueUniqueUpload(context, task.id, call.clientCallId)
+                            Log.i(TAG, "Triggered RecordingUploadWorker for call ${call.clientCallId} with task ${task.id}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to enqueue RecordingUploadWorker post-sync: ${e.message}")
                     }
                 }
 
@@ -301,6 +338,35 @@ class CallRepositoryImpl(
             val errorMsg = "Unexpected error reporting call: ${e.message}"
             callDao.updateSyncStatus(call.id, "FAILED", errorMsg)
             AppResult.Failure(AppError.UnknownError(errorMsg, cause = e))
+        }
+    }
+
+    override suspend fun syncPendingCallsToBackend(): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            val pendingCalls = callDao.getPendingSyncCalls().toMutableList()
+            val recentCalls = callDao.getRecentCalls(100)
+            for (c in recentCalls) {
+                if (c.syncStatus != "SYNCED" && pendingCalls.none { it.id == c.id || it.clientCallId == c.clientCallId }) {
+                    pendingCalls.add(c)
+                }
+            }
+
+            if (pendingCalls.isEmpty()) return@withContext AppResult.Success(0)
+
+            var synced = 0
+            for (call in pendingCalls) {
+                try {
+                    val result = reportCallToBackend(call.clientCallId)
+                    if (result is AppResult.Success) {
+                        synced++
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed syncing pending call ${call.id}: ${e.message}")
+                }
+            }
+            AppResult.Success(synced)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed syncing pending calls: ${e.message}", e))
         }
     }
 
@@ -622,8 +688,11 @@ class CallRepositoryImpl(
                             updatedTask
                         }
 
-                        // If call belongs to an assigned Lead, automatically trigger upload worker
-                        if (call.isLeadCall && !call.leadId.isNullOrBlank() && call.leadId != "unlinked" && context != null) {
+                        // If call belongs to an assigned Lead or is an incoming call, automatically trigger upload worker
+                        val isEligibleForUpload = (call.isLeadCall && !call.leadId.isNullOrBlank() && call.leadId != "unlinked") ||
+                            call.callType == CallLog.Calls.INCOMING_TYPE ||
+                            call.notes?.contains("incoming", ignoreCase = true) == true
+                        if (isEligibleForUpload && context != null) {
                             try {
                                 RecordingUploadWorker.enqueueUniqueUpload(
                                     context = context,

@@ -33,5 +33,9 @@ data class CallEntity(
     val recordingUri: String? = null,
     val recordingFileName: String? = null,
     val recordingFileSizeBytes: Long? = null,
-    val createdAtEpochMs: Long = System.currentTimeMillis()
+    val createdAtEpochMs: Long = System.currentTimeMillis(),
+    val recordingOrigin: String = "sim_call",
+    val remoteRecordingUrl: String? = null,
+    val isDownloaded: Boolean = false,
+    val localFilePath: String? = null
 )

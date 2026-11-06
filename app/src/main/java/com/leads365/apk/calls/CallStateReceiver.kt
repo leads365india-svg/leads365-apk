@@ -6,6 +6,7 @@ import android.content.Intent
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.leads365.apk.core.CallEvent
+import com.leads365.apk.data.repository.CallRepository
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -22,6 +23,7 @@ class CallStateReceiver : BroadcastReceiver() {
     @InstallIn(SingletonComponent::class)
     interface CallStateReceiverEntryPoint {
         fun callProcessingManager(): CallProcessingManager
+        fun callRepository(): CallRepository
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -65,7 +67,23 @@ class CallStateReceiver : BroadcastReceiver() {
                             )
                             val callProcessingManager = entryPoint.callProcessingManager()
                             Log.d(TAG, "Dispatching call to CallProcessingManager for recording discovery and persistence")
-                            callProcessingManager.processCallEvent(call)
+                            val processResult = callProcessingManager.processCallEvent(call)
+
+                            val clientCallId = when (processResult) {
+                                is CallProcessingResult.Recorded -> processResult.call.clientCallId
+                                is CallProcessingResult.UnlinkedIncomingRecorded -> processResult.call.clientCallId
+                                else -> null
+                            }
+
+                            if (!clientCallId.isNullOrBlank()) {
+                                try {
+                                    val callRepo = entryPoint.callRepository()
+                                    val reportRes = callRepo.reportCallToBackend(clientCallId)
+                                    Log.i(TAG, "Immediate backend report for call $clientCallId completed: $reportRes")
+                                } catch (syncErr: Exception) {
+                                    Log.w(TAG, "Deferred background sync for $clientCallId: ${syncErr.message}")
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to dispatch call to CallProcessingManager: ${e.message}", e)
                         }

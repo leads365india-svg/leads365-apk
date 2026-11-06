@@ -141,12 +141,13 @@ class RecordingUploadWorker(
             }
         }
 
-        // 5. Update status to UPLOADING
+        // 5. Update status to UPLOADING and resolve latest task metadata (with canonical leadId)
+        val currentTask = (uploadQueueRepository.getTaskById(task.id) as? AppResult.Success)?.data ?: task
         uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_UPLOADING)
         showNotification(applicationContext, task.fileName, "Uploading call recording...")
 
         // 6. Execute Streaming Upload
-        return@withContext when (val result = uploadManager.uploadRecording(task)) {
+        return@withContext when (val result = uploadManager.uploadRecording(currentTask)) {
             is UploadExecutionResult.Success -> {
                 Log.i(TAG, "Upload succeeded for task ${task.id}, call ${task.callId}. AlreadyUploaded=${result.isAlreadyUploaded}")
                 uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_UPLOADED)

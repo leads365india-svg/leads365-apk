@@ -21,7 +21,7 @@ import com.leads365.apk.database.entity.FollowUpEntity
         UploadTaskEntity::class,
         FollowUpEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class Leads365Database : RoomDatabase() {
@@ -99,6 +99,18 @@ abstract class Leads365Database : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE follow_ups ADD COLUMN sourceCallId TEXT DEFAULT NULL")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_ups_sourceCallId ON follow_ups(sourceCallId)")
+            }
+        }
+
+        /**
+         * Migration from version 5 to version 6 adding Phase 8 AI Receptionist cloud recording fields
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE calls ADD COLUMN recordingOrigin TEXT NOT NULL DEFAULT 'sim_call'")
+                db.execSQL("ALTER TABLE calls ADD COLUMN remoteRecordingUrl TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE calls ADD COLUMN isDownloaded INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE calls ADD COLUMN localFilePath TEXT DEFAULT NULL")
             }
         }
     }

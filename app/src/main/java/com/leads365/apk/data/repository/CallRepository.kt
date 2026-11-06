@@ -18,6 +18,7 @@ interface CallRepository {
     suspend fun updateRecordingMatch(callId: String, hasRecording: Boolean, recordingUri: String?, recordingFileName: String?, recordingFileSizeBytes: Long?): AppResult<Unit>
     suspend fun getPendingSyncCalls(): AppResult<List<CallEntity>>
     suspend fun reportCallToBackend(callId: String): AppResult<com.leads365.apk.network.models.CallReportResponse>
+    suspend fun syncPendingCallsToBackend(): AppResult<Int> = AppResult.Success(0)
     suspend fun syncCallsFromBackend(): AppResult<Int> = AppResult.Success(0)
     suspend fun getUnassignedCallsForNumber(normalizedNumber: String, rawNumber: String): AppResult<List<CallEntity>> = AppResult.Success(emptyList())
     suspend fun associateCallToLead(callId: String, leadId: String): AppResult<Unit> = AppResult.Success(Unit)

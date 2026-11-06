@@ -54,7 +54,8 @@ object DatabaseModule {
                 Leads365Database.MIGRATION_1_2,
                 Leads365Database.MIGRATION_2_3,
                 Leads365Database.MIGRATION_3_4,
-                Leads365Database.MIGRATION_4_5
+                Leads365Database.MIGRATION_4_5,
+                Leads365Database.MIGRATION_5_6
             )
             .build()
     }

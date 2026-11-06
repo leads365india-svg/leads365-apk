@@ -445,6 +445,21 @@ fun CallRecordCard(
                                     )
                                 }
                             }
+                            if (item.isCloudRecording || item.recordingOrigin == "ai_receptionist") {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF6366F1).copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "AI Receptionist",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF4F46E5),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
                         }
                         Text(
                             text = "$directionLabel • $dateStr",
@@ -655,7 +670,7 @@ fun RecordingSectionCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!item.recordingUri.isNullOrBlank() && isReadable) {
+                if ((!item.recordingUri.isNullOrBlank() || !item.remoteRecordingUrl.isNullOrBlank()) && isReadable) {
                     OutlinedButton(
                         onClick = onPlay,
                         modifier = Modifier.heightIn(min = 48.dp),
@@ -670,7 +685,12 @@ fun RecordingSectionCard(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Play", fontSize = 11.sp, color = BlueAccent, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (item.isCloudRecording) "Stream" else "Play",
+                            fontSize = 11.sp,
+                            color = BlueAccent,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 

@@ -52,7 +52,7 @@ class AutoLeadCaptureConfig(
 
     /**
      * Whether automatic lead creation from answered incoming calls is enabled.
-     * Default: false (must be explicitly enabled by user/admin).
+     * Default: true (automatically captures leads from answered incoming calls).
      */
     fun isAutoLeadCreationEnabled(tenantId: String? = null): Boolean {
         val key = getScopedKey(KEY_AUTO_CREATE_LEAD, tenantId)

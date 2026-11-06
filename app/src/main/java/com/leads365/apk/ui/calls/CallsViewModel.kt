@@ -45,7 +45,12 @@ data class CallRecordUiModel(
     val recordingFileSizeBytes: Long? = null,
     val recordingUri: String? = null,
     val isCandidateOnly: Boolean = false,
-    val discoveryState: String = "Matched" // "Matched", "Unmatched", "Inaccessible"
+    val discoveryState: String = "Matched", // "Matched", "Unmatched", "Inaccessible"
+    val isCloudRecording: Boolean = false,
+    val recordingOrigin: String = "sim_call",
+    val remoteRecordingUrl: String? = null,
+    val isDownloaded: Boolean = false,
+    val localFilePath: String? = null
 )
 
 @HiltViewModel
@@ -90,7 +95,7 @@ class CallsViewModel @Inject constructor(
                     safRecordingSource.listDiscoveredRecordings()
                 } else emptyList()
 
-                val mediaStoreList = if (safList.isEmpty() && mediaStoreRecordingSource.isAccessible()) {
+                val mediaStoreList = if (mediaStoreRecordingSource.isAccessible()) {
                     mediaStoreRecordingSource.listDiscoveredRecordings()
                 } else emptyList()
 
@@ -103,6 +108,13 @@ class CallsViewModel @Inject constructor(
                     callRepository.reconcileUnmatchedRecordings(candidates)
                 } catch (e: Exception) {
                     Log.w("CallsViewModel", "Error reconciling unmatched recordings: ${e.message}")
+                }
+
+                // Sync all pending/queued local calls to CRM backend
+                try {
+                    callRepository.syncPendingCallsToBackend()
+                } catch (e: Exception) {
+                    Log.w("CallsViewModel", "Error syncing pending calls to CRM: ${e.message}")
                 }
 
                 try {
@@ -272,6 +284,7 @@ class CallsViewModel @Inject constructor(
                 val uri = call.recordingUri ?: task?.localFileUri
                 val isUnlinked = !call.isLeadCall || call.leadId.isNullOrBlank()
 
+                val isCloud = call.recordingOrigin == "ai_receptionist"
                 CallRecordUiModel(
                     id = call.id,
                     call = call,
@@ -282,7 +295,12 @@ class CallsViewModel @Inject constructor(
                     recordingFileSizeBytes = fileSize,
                     recordingUri = uri,
                     isCandidateOnly = false,
-                    discoveryState = if (hasRec) "Matched" else "No File Found"
+                    discoveryState = if (hasRec) "Matched" else "No File Found",
+                    isCloudRecording = isCloud,
+                    recordingOrigin = call.recordingOrigin,
+                    remoteRecordingUrl = call.remoteRecordingUrl,
+                    isDownloaded = call.isDownloaded,
+                    localFilePath = call.localFilePath
                 )
             }
         }

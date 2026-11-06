@@ -15,9 +15,12 @@ import com.leads365.apk.database.entity.LeadEntity
 import com.leads365.apk.recordings.DiscoveryResult
 import com.leads365.apk.recordings.RecordingDiscoveryCoordinator
 import com.leads365.apk.network.auth.TokenProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -211,15 +214,15 @@ class CallProcessingManager(
         val isValidCallerNumber = phoneDigits.length >= 7 &&
             !normalizedNumber.contains("unknown", ignoreCase = true) &&
             !normalizedNumber.contains("private", ignoreCase = true)
-        val isNativeIncomingType = callEvent.callType == null || callEvent.callType == CallLog.Calls.INCOMING_TYPE
+        val isIncoming = callEvent.direction == CallDirection.INCOMING ||
+            callEvent.callType == CallLog.Calls.INCOMING_TYPE
         val isNotMissedOrRejected = callEvent.direction != CallDirection.MISSED &&
             callEvent.callType != CallLog.Calls.MISSED_TYPE &&
             callEvent.callType != CallLog.Calls.REJECTED_TYPE
 
         if (matchingLead == null &&
             isAutoEnabled &&
-            callEvent.direction == CallDirection.INCOMING &&
-            isNativeIncomingType &&
+            isIncoming &&
             isNotMissedOrRejected &&
             callEvent.durationSeconds >= minDuration &&
             isValidCallerNumber
