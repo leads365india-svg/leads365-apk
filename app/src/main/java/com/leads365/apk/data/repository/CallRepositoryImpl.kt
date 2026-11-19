@@ -725,6 +725,15 @@ class CallRepositoryImpl(
         }
     }
 
+    override suspend fun getClaimedRecordingUris(excludeCallId: String): Set<String> = withContext(ioDispatcher) {
+        try {
+            callDao.getClaimedRecordingUris(excludeCallId).filter { it.isNotBlank() }.toSet()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get claimed recording URIs: ${e.message}")
+            emptySet()
+        }
+    }
+
     override suspend fun clearAll(): AppResult<Unit> = withContext(ioDispatcher) {
         try {
             callDao.clearAll()

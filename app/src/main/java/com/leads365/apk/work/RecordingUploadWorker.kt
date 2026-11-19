@@ -13,8 +13,10 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -109,12 +111,12 @@ class RecordingUploadWorker(
         // 3. Wi-Fi Only Preference Check
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val wifiOnly = prefs.getBoolean(PREF_UPLOAD_WIFI_ONLY, false)
-        if (wifiOnly && !isWifiConnectedAndUnmetered(applicationContext)) {
-            Log.i(TAG, "Upload preference is Wi-Fi only, but network is metered or not Wi-Fi. Transitioning task ${task.id} to RETRY_WAIT.")
+        if (wifiOnly && !isWifiConnected(applicationContext)) {
+            Log.i(TAG, "Upload preference is Wi-Fi only, but network is not Wi-Fi. Transitioning task ${task.id} to RETRY_WAIT.")
             uploadQueueRepository.updateStatus(
                 task.id,
                 UploadTaskEntity.STATE_RETRY_WAIT,
-                "Waiting for unmetered Wi-Fi connection"
+                "Waiting for Wi-Fi connection"
             )
             return@withContext Result.retry()
         }
@@ -202,7 +204,26 @@ class RecordingUploadWorker(
         }
     }
 
-    // Replaced by companion object isWifiConnectedAndUnmetered(context)
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        ensureNotificationChannel(applicationContext)
+        val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle("Recording Upload")
+            .setContentText("Uploading call recording in background...")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
+    }
 
     private fun showNotification(context: Context, fileName: String, message: String, isComplete: Boolean = false) {
         try {
@@ -248,13 +269,15 @@ class RecordingUploadWorker(
         const val NOTIFICATION_CHANNEL_ID = "channel_recording_uploads"
         const val NOTIFICATION_ID = 2001
 
-        fun isWifiConnectedAndUnmetered(context: Context): Boolean {
+        fun isWifiConnected(context: Context): Boolean {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
             val activeNetwork = cm.activeNetwork ?: return false
             val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
-            val hasWifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-            val isNotMetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-            return hasWifi && isNotMetered
+            return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        }
+
+        fun isWifiConnectedAndUnmetered(context: Context): Boolean {
+            return isWifiConnected(context)
         }
 
         fun enqueueUniqueUpload(
@@ -265,14 +288,14 @@ class RecordingUploadWorker(
             policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE
         ) {
             val resolvedCallId = if (!callId.isNullOrBlank()) callId else taskId
-            val isWifiOnly = wifiOnly ?: context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(PREF_UPLOAD_WIFI_ONLY, false)
-            val networkType = if (isWifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+            // WorkManager uses CONNECTED so metered Wi-Fi / hotspots are never blocked by the OS scheduler.
+            // Wi-Fi requirement is enforced directly in doWork().
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(networkType)
+                .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
             val request = OneTimeWorkRequestBuilder<RecordingUploadWorker>()
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
                 .setInputData(

@@ -542,4 +542,156 @@ class Phase7RecordingDiscoveryAndMatchingTest {
         assertNotNull("Upload task must be present for matched call", matchedTask)
         assertEquals(UploadTaskEntity.STATUS_PENDING, matchedTask!!.status)
     }
+
+    @Test(timeout = 10_000)
+    fun `consecutive calls from same number exclude already claimed recording and prevent ambiguous match`() = runBlocking {
+        // Pre-insert active lead
+        database.leadDao().insert(activeLead)
+
+        val call1Start = 1700200000000L
+        val call1Duration = 60L
+        val call1End = call1Start + (call1Duration * 1000L)
+
+        val call1Event = CallEvent(
+            id = "consecutive_call_001",
+            rawNumber = "+91 98765 43210",
+            normalizedNumber = "+919876543210",
+            startTimeEpochMs = call1Start,
+            endTimeEpochMs = call1End,
+            durationSeconds = call1Duration,
+            direction = CallDirection.OUTGOING
+        )
+
+        // Call 2 starts 1 minute (60 seconds) after Call 1 ends
+        val call2Start = call1End + 60_000L
+        val call2Duration = 45L
+        val call2End = call2Start + (call2Duration * 1000L)
+
+        val call2Event = CallEvent(
+            id = "consecutive_call_002",
+            rawNumber = "+91 98765 43210",
+            normalizedNumber = "+919876543210",
+            startTimeEpochMs = call2Start,
+            endTimeEpochMs = call2End,
+            durationSeconds = call2Duration,
+            direction = CallDirection.OUTGOING
+        )
+
+        // Pre-populate both calls into Room
+        callRepository.recordCall(
+            CallEntity(
+                id = call1Event.id,
+                clientCallId = call1Event.id,
+                normalizedNumber = call1Event.normalizedNumber,
+                rawNumber = call1Event.rawNumber,
+                callType = 2,
+                startTimeEpochMs = call1Event.startTimeEpochMs,
+                durationSeconds = call1Event.durationSeconds,
+                isLeadCall = true,
+                leadId = activeLead.id,
+                hasRecording = false
+            )
+        )
+        callRepository.recordCall(
+            CallEntity(
+                id = call2Event.id,
+                clientCallId = call2Event.id,
+                normalizedNumber = call2Event.normalizedNumber,
+                rawNumber = call2Event.rawNumber,
+                callType = 2,
+                startTimeEpochMs = call2Event.startTimeEpochMs,
+                durationSeconds = call2Event.durationSeconds,
+                isLeadCall = true,
+                leadId = activeLead.id,
+                hasRecording = false
+            )
+        )
+
+        val candidate1 = RecordingCandidate(
+            uriString = "content://saf/tree/recording_1.m4a",
+            displayName = "Call_9876543210_1.m4a",
+            sizeBytes = 250000L,
+            lastModifiedEpochMs = call1End + 2000L,
+            mimeType = "audio/m4a",
+            durationSeconds = call1Duration,
+            sourceMethod = RecordingDiscoveryMethod.STORAGE_ACCESS_FRAMEWORK
+        )
+
+        val candidate2 = RecordingCandidate(
+            uriString = "content://saf/tree/recording_2.m4a",
+            displayName = "Call_9876543210_2.m4a",
+            sizeBytes = 190000L,
+            lastModifiedEpochMs = call2End + 2000L,
+            mimeType = "audio/m4a",
+            durationSeconds = call2Duration,
+            sourceMethod = RecordingDiscoveryMethod.STORAGE_ACCESS_FRAMEWORK
+        )
+
+        // The recording source returns BOTH files in the recording directory for that phone number
+        val testSaf = object : SafRecordingSource(context, getTreeUriString = { null }) {
+            override fun isConfigured() = true
+            override fun isAccessible() = true
+            override fun queryCandidates(callStartEpochMs: Long, callEndEpochMs: Long, callDurationSec: Long, normalizedNumber: String): List<RecordingCandidate> {
+                return listOf(candidate1, candidate2)
+            }
+        }
+
+        val testMediaStore = object : MediaStoreRecordingSource(context) {
+            override fun isAccessible() = false
+            override fun queryCandidates(callStartEpochMs: Long, callEndEpochMs: Long, callDurationSec: Long, normalizedNumber: String) = emptyList<RecordingCandidate>()
+        }
+
+        val coordinator = RecordingDiscoveryCoordinator(
+            safRecordingSource = testSaf,
+            mediaStoreRecordingSource = testMediaStore,
+            matcher = matcher,
+            callRepository = callRepository,
+            uploadQueueRepository = uploadQueueRepository,
+            normalizer = normalizer,
+            delayProvider = { /* zero delay */ }
+        )
+
+        // 1. Process Call 1: Matches candidate1 and claims it in Room and UploadQueue
+        val result1 = coordinator.discoverAndMatchRecording(
+            callEvent = call1Event,
+            lead = activeLead,
+            callId = call1Event.id
+        )
+        assertTrue("Call 1 must match successfully", result1 is DiscoveryResult.Matched)
+        val matched1 = result1 as DiscoveryResult.Matched
+        assertEquals(candidate1.uriString, matched1.candidate.uriString)
+
+        // Verify Call 1 claimed candidate1 in CallRepository
+        val updatedCall1 = (callRepository.findCallBySignature(call1Event.normalizedNumber, call1Event.startTimeEpochMs) as AppResult.Success).data
+        assertNotNull(updatedCall1)
+        assertTrue(updatedCall1!!.hasRecording)
+        assertEquals(candidate1.uriString, updatedCall1.recordingUri)
+
+        // 2. Process Call 2: Candidate source still returns candidate1 AND candidate2.
+        // Because Call 1 claimed candidate1, Call 2 must exclude candidate1 and cleanly match candidate2
+        // rather than failing with MatchStatus.AMBIGUOUS.
+        val result2 = coordinator.discoverAndMatchRecording(
+            callEvent = call2Event,
+            lead = activeLead,
+            callId = call2Event.id
+        )
+
+        assertTrue("Call 2 must match cleanly and NOT be ambiguous", result2 is DiscoveryResult.Matched)
+        val matched2 = result2 as DiscoveryResult.Matched
+        assertEquals("Call 2 must cleanly match recording_2.m4a", candidate2.uriString, matched2.candidate.uriString)
+        assertEquals(candidate2.displayName, matched2.candidate.displayName)
+
+        // Verify Call 2 claimed candidate2 in Room
+        val updatedCall2 = (callRepository.findCallBySignature(call2Event.normalizedNumber, call2Event.startTimeEpochMs) as AppResult.Success).data
+        assertNotNull(updatedCall2)
+        assertTrue(updatedCall2!!.hasRecording)
+        assertEquals(candidate2.uriString, updatedCall2.recordingUri)
+
+        // Verify both upload tasks exist in UploadQueue
+        val pendingTasks = (uploadQueueRepository.getPendingTasks() as AppResult.Success).data
+        assertEquals(2, pendingTasks.size)
+        val taskUris = pendingTasks.map { it.localFileUri }.toSet()
+        assertTrue(taskUris.contains(candidate1.uriString))
+        assertTrue(taskUris.contains(candidate2.uriString))
+    }
 }

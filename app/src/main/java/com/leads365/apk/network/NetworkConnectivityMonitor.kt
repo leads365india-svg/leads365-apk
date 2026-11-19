@@ -99,8 +99,7 @@ open class NetworkConnectivityMonitor @Inject constructor(
     private fun updateNetworkState(capabilities: NetworkCapabilities?) {
         val connected = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         val wifi = capabilities != null &&
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
 
         _isConnected.value = connected
         _isWifiConnected.value = wifi
@@ -111,20 +110,19 @@ open class NetworkConnectivityMonitor @Inject constructor(
         val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         if (!hasInternet) return
 
-        val isUnmeteredWifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        val isWifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
 
         val prefs = context.getSharedPreferences(RecordingUploadWorker.PREFS_NAME, Context.MODE_PRIVATE)
         val wifiOnly = prefs.getBoolean(RecordingUploadWorker.PREF_UPLOAD_WIFI_ONLY, false)
 
-        val eligibleForUpload = if (wifiOnly) isUnmeteredWifi else true
+        val eligibleForUpload = if (wifiOnly) isWifi else true
 
         if (eligibleForUpload) {
             scope.launch {
                 try {
                     val auth = authRepository.get()
                     if (auth.isLoggedIn()) {
-                        Log.i(TAG, "Network transition to suitable connection (wifiOnly=$wifiOnly, isWifi=$isUnmeteredWifi). Resuming pending uploads.")
+                        Log.i(TAG, "Network transition to suitable connection (wifiOnly=$wifiOnly, isWifi=$isWifi). Resuming pending uploads.")
                         workManagerScheduler.get().resumePendingUploads()
                     }
                 } catch (e: Exception) {

@@ -113,4 +113,12 @@ class UploadQueueRepositoryImpl @Inject constructor(
             AppResult.Failure(AppError.StorageError("Failed to clean expired terminal upload tasks: ${e.message}", e))
         }
     }
+
+    override suspend fun getClaimedFileUris(excludeCallId: String): Set<String> = withContext(ioDispatcher) {
+        try {
+            uploadTaskDao.getClaimedFileUris(excludeCallId).filter { it.isNotBlank() }.toSet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
 }

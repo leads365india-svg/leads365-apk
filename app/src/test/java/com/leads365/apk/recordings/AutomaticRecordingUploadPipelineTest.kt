@@ -89,12 +89,12 @@ class AutomaticRecordingUploadPipelineTest {
         // 1. Enqueue upload while Wi-Fi Only is ON
         workManagerScheduler.scheduleUploadTask(task.id, task.localFileUri, task.callId)
 
-        // Verify WorkManager constraint requires UNMETERED network
+        // Verify WorkManager constraint uses CONNECTED network so metered Wi-Fi / hotspots are not blocked
         val workInfos = workManager.getWorkInfosForUniqueWork(RecordingUploadWorker.WORK_NAME_PREFIX + task.callId).get()
         assertNotNull(workInfos)
         assertTrue(workInfos.isNotEmpty())
         val workInfo = workInfos.first()
-        assertEquals(NetworkType.UNMETERED, workInfo.constraints.requiredNetworkType)
+        assertEquals(NetworkType.CONNECTED, workInfo.constraints.requiredNetworkType)
 
         // Verify UI status when on 4G/Cellular (not Wi-Fi) displays "Waiting for Wi-Fi"
         val waitingWifi = isWaitingForWifi(task, wifiOnly = true, isWifiConnected = false)
@@ -187,7 +187,7 @@ class AutomaticRecordingUploadPipelineTest {
 
         workManagerScheduler.scheduleUploadTask(task.id, task.localFileUri, task.callId)
         val initialWork = workManager.getWorkInfosForUniqueWork(RecordingUploadWorker.WORK_NAME_PREFIX + task.callId).get().first()
-        assertEquals(NetworkType.UNMETERED, initialWork.constraints.requiredNetworkType)
+        assertEquals(NetworkType.CONNECTED, initialWork.constraints.requiredNetworkType)
 
         // User turns Wi-Fi Only OFF
         prefs.edit().putBoolean(RecordingUploadWorker.PREF_UPLOAD_WIFI_ONLY, false).commit()

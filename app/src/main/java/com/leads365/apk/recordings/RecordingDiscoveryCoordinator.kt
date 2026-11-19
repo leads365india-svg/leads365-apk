@@ -112,14 +112,22 @@ class RecordingDiscoveryCoordinator(
         val targetCallId = if (callId.isNotBlank()) callId else callEvent.id
         Log.d(TAG, "Starting targeted recording discovery for callId=$targetCallId, leadId=${lead?.id ?: "unlinked"}")
 
+        // Retrieve claimed URIs across existing calls and upload tasks to prevent collision with earlier calls
+        val claimedUris = (callRepository.getClaimedRecordingUris(targetCallId) + uploadQueueRepository.getClaimedFileUris(targetCallId)).toSet()
+        if (claimedUris.isNotEmpty()) {
+            Log.d(TAG, "Excluding ${claimedUris.size} already-claimed recording URI(s) for callId=$targetCallId")
+        }
+
         var attempts = 0
         var candidates: List<RecordingCandidate>
+        var unclaimedCandidates: List<RecordingCandidate>
         var matchResult: RecordingMatchResult
 
         // Initial scan
         attempts++
         candidates = scanSourcesForCandidates(callEvent, normalizedNumber)
-        matchResult = matcher.match(candidates, callEvent)
+        unclaimedCandidates = candidates.filter { it.uriString !in claimedUris }
+        matchResult = matcher.match(unclaimedCandidates, callEvent)
 
         // Bounded retries for delayed OEM dialer writes (Vivo, Xiaomi, Samsung)
         if (matchResult.status == MatchStatus.NO_FILE_FOUND && retryDelaysMs.isNotEmpty()) {
@@ -129,7 +137,8 @@ class RecordingDiscoveryCoordinator(
                 }
                 attempts++
                 candidates = scanSourcesForCandidates(callEvent, normalizedNumber)
-                matchResult = matcher.match(candidates, callEvent)
+                unclaimedCandidates = candidates.filter { it.uriString !in claimedUris }
+                matchResult = matcher.match(unclaimedCandidates, callEvent)
                 if (matchResult.status != MatchStatus.NO_FILE_FOUND) {
                     break
                 }
@@ -181,7 +190,7 @@ class RecordingDiscoveryCoordinator(
                     recordingFileName = null,
                     recordingFileSizeBytes = null
                 )
-                DiscoveryResult.Ambiguous(matchResult, candidates, attempts)
+                DiscoveryResult.Ambiguous(matchResult, unclaimedCandidates, attempts)
             }
             MatchStatus.NO_FILE_FOUND -> {
                 val reportedReason = if (callEvent.direction == CallDirection.INCOMING || isEligibleInbound) {

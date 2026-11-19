@@ -28,6 +28,9 @@ interface UploadTaskDao {
     @Query("SELECT * FROM upload_tasks WHERE localFileUri = :uri LIMIT 1")
     suspend fun getByLocalFileUri(uri: String): UploadTaskEntity?
 
+    @Query("SELECT DISTINCT localFileUri FROM upload_tasks WHERE localFileUri != '' AND (callId IS NULL OR callId != :excludeCallId)")
+    suspend fun getClaimedFileUris(excludeCallId: String): List<String>
+
     @Query("UPDATE upload_tasks SET leadId = :leadId, updatedAtEpochMs = :timestamp WHERE callId = :callId")
     suspend fun updateLeadIdForCall(callId: String, leadId: String, timestamp: Long = System.currentTimeMillis()): Int
 

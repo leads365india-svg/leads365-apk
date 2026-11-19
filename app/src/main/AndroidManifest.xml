@@ -28,6 +28,10 @@
     <!-- Phase 12: Boot completed permission for WorkManager and BootCompletedReceiver -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Foreground Service permissions for WorkManager expedited uploads (API 34+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <!-- Declare telephony hardware feature as optional so app installs on ChromeOS / non-telephony devices -->
     <uses-feature
         android:name="android.hardware.telephony"
@@ -96,6 +100,12 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Expedited WorkManager background service configuration for data synchronization -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
     </application>
 

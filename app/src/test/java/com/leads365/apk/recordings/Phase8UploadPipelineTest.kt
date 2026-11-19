@@ -425,14 +425,14 @@ class Phase8UploadPipelineTest {
             .build()
         assertEquals(NetworkType.CONNECTED, constraintsMetered.requiredNetworkType)
 
-        // Case B: wifi-only enabled -> UNMETERED network required
+        // Case B: wifi-only enabled -> CONNECTED network required for WorkManager (hotspots not blocked), Wi-Fi enforced at runtime
         prefs.edit().putBoolean(RecordingUploadWorker.PREF_UPLOAD_WIFI_ONLY, true).commit()
         val isWifiOnlyTrue = prefs.getBoolean(RecordingUploadWorker.PREF_UPLOAD_WIFI_ONLY, false)
         assertTrue(isWifiOnlyTrue)
 
         val constraintsUnmetered = Constraints.Builder()
-            .setRequiredNetworkType(if (isWifiOnlyTrue) NetworkType.UNMETERED else NetworkType.CONNECTED)
+            .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        assertEquals(NetworkType.UNMETERED, constraintsUnmetered.requiredNetworkType)
+        assertEquals(NetworkType.CONNECTED, constraintsUnmetered.requiredNetworkType)
     }
 }

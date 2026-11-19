@@ -90,6 +90,9 @@ interface CallDao {
     """)
     suspend fun updateRecording(callId: String, hasRecording: Boolean, recordingUri: String?, recordingFileName: String?, recordingFileSizeBytes: Long?): Int
 
+    @Query("SELECT DISTINCT recordingUri FROM calls WHERE recordingUri IS NOT NULL AND recordingUri != '' AND id != :excludeCallId")
+    suspend fun getClaimedRecordingUris(excludeCallId: String): List<String>
+
     @Query("DELETE FROM calls WHERE id = :id")
     suspend fun deleteById(id: String): Int
 

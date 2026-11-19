@@ -7,6 +7,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -44,7 +45,9 @@ open class WorkManagerScheduler @Inject constructor(
     ) {
         val prefs = context.getSharedPreferences(RecordingUploadWorker.PREFS_NAME, Context.MODE_PRIVATE)
         val wifiOnly = prefs.getBoolean(RecordingUploadWorker.PREF_UPLOAD_WIFI_ONLY, false)
-        val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+        // Use NetworkType.CONNECTED so WorkManager is not blocked by metered Wi-Fi / hotspots.
+        // Wi-Fi requirement is enforced directly in RecordingUploadWorker.doWork().
+        val networkType = NetworkType.CONNECTED
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(networkType)
@@ -53,6 +56,7 @@ open class WorkManagerScheduler @Inject constructor(
         val resolvedCallId = if (!callId.isNullOrBlank()) callId else taskId
 
         val uploadRequest = OneTimeWorkRequestBuilder<RecordingUploadWorker>()
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setConstraints(constraints)
             .setBackoffCriteria(
                 androidx.work.BackoffPolicy.EXPONENTIAL,
