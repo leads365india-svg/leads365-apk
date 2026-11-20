@@ -503,4 +503,198 @@ class Phase6CallingFlowAndDetectionTest {
         val expired = newManager.consumePendingCallForNumber("+919876500009", windowMs = 0L)
         assertNull(expired)
     }
+
+    @Test
+    fun `normal missed call saved and synced immediately without recording`() = runBlocking {
+        val lead = LeadEntity(
+            id = "lead_missed_direct_1",
+            name = "Vikas Khanna",
+            rawNumber = "+91 98765 99001",
+            normalizedNumber = "+919876599001",
+            status = "New"
+        )
+        leadDao.insert(lead)
+
+        val missedCall = CallEvent(
+            id = "sys_missed_direct_1",
+            rawNumber = "+919876599001",
+            normalizedNumber = "+919876599001",
+            startTimeEpochMs = 1700000000000L,
+            endTimeEpochMs = 1700000000000L,
+            durationSeconds = 0L,
+            direction = CallDirection.MISSED,
+            callType = CallLog.Calls.MISSED_TYPE
+        )
+
+        // Step 1: Call processing manager processes missed call
+        val result = callProcessingManager.processCallEvent(missedCall)
+        assertTrue("Missed call for lead must be recorded", result is CallProcessingResult.Recorded)
+
+        val recorded = (result as CallProcessingResult.Recorded)
+        assertEquals("lead_missed_direct_1", recorded.call.leadId)
+        assertEquals("Missed", recorded.call.callOutcome)
+        assertEquals(0L, recorded.call.durationSeconds)
+        assertEquals(CallLog.Calls.MISSED_TYPE, recorded.call.callType)
+        assertFalse("Missed call must never have recording", recorded.call.hasRecording)
+        assertNull(recorded.call.recordingUri)
+
+        // Step 2: Immediate reporting to backend
+        val responseJson = json.encodeToString(
+            CallReportResponse(
+                success = true,
+                callId = "srv_call_missed_1",
+                message = "Call reported successfully"
+            )
+        )
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(responseJson))
+
+        val reportResult = callRepository.reportCallToBackend(recorded.call.id)
+        assertTrue(reportResult is AppResult.Success)
+
+        // Step 3: Verify backend request payload contains MISSED direction and outcome
+        val recordedRequest = mockWebServer.takeRequest()
+        val requestBody = recordedRequest.body.readUtf8()
+        assertTrue(requestBody.contains("\"call_direction\":\"MISSED\""))
+        assertTrue(requestBody.contains("\"call_outcome\":\"Missed\""))
+        assertTrue(requestBody.contains("\"lead_id\":\"lead_missed_direct_1\""))
+
+        // Step 4: Verify Room DB status is SYNCED
+        val saved = callDao.getById(recorded.call.id)
+        assertNotNull(saved)
+        assertEquals("SYNCED", saved?.syncStatus)
+        assertEquals("Missed", saved?.callOutcome)
+    }
+
+    @Test
+    fun `call-waiting missed call during active offhook call is captured and synced`() = runBlocking {
+        val leadA = LeadEntity(
+            id = "lead_active_call_a",
+            name = "Call A Client",
+            rawNumber = "+91 98765 10001",
+            normalizedNumber = "+919876510001",
+            status = "Engaged"
+        )
+        val leadB = LeadEntity(
+            id = "lead_waiting_call_b",
+            name = "Call B Client (Waiting)",
+            rawNumber = "+91 98765 20002",
+            normalizedNumber = "+919876520002",
+            status = "New"
+        )
+        leadDao.insert(leadA)
+        leadDao.insert(leadB)
+
+        val callAStart = 1700000000000L
+        val callAEnd = 1700000120000L // 120s duration
+        val callBStart = 1700000045000L // Call waiting arrives 45s into Call A
+
+        val callEventA = CallEvent(
+            id = "call_a_active",
+            rawNumber = "+919876510001",
+            normalizedNumber = "+919876510001",
+            startTimeEpochMs = callAStart,
+            endTimeEpochMs = callAEnd,
+            durationSeconds = 120L,
+            direction = CallDirection.OUTGOING,
+            callType = CallLog.Calls.OUTGOING_TYPE
+        )
+
+        val callEventB = CallEvent(
+            id = "call_b_waiting_missed",
+            rawNumber = "+919876520002",
+            normalizedNumber = "+919876520002",
+            startTimeEpochMs = callBStart,
+            endTimeEpochMs = callBStart,
+            durationSeconds = 0L,
+            direction = CallDirection.MISSED,
+            callType = CallLog.Calls.MISSED_TYPE
+        )
+
+        // When Call A ends, CallLogReader.findRecentCalls retrieves both Call A and Call Waiting Call B
+        // Step 1: Process Call A
+        val resA = callProcessingManager.processCallEvent(callEventA)
+        assertTrue("Active call A must be recorded", resA is CallProcessingResult.Recorded)
+        val recordedA = (resA as CallProcessingResult.Recorded).call
+        assertEquals("lead_active_call_a", recordedA.leadId)
+        assertEquals(120L, recordedA.durationSeconds)
+
+        // Step 2: Process Call B (Call Waiting missed call)
+        val resB = callProcessingManager.processCallEvent(callEventB)
+        assertTrue("Call waiting missed call B must be recorded", resB is CallProcessingResult.Recorded)
+        val recordedB = (resB as CallProcessingResult.Recorded).call
+        assertEquals("lead_waiting_call_b", recordedB.leadId)
+        assertEquals(0L, recordedB.durationSeconds)
+        assertEquals("Missed", recordedB.callOutcome)
+        assertFalse(recordedB.hasRecording)
+
+        // Verify both calls exist in Room DB
+        assertEquals(2, callDao.count())
+
+        // Step 3: Both calls report to backend
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(json.encodeToString(
+            CallReportResponse(success = true, callId = "srv_call_a", message = "Call A ok")
+        )))
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(json.encodeToString(
+            CallReportResponse(success = true, callId = "srv_call_b", message = "Call B ok")
+        )))
+
+        val reportA = callRepository.reportCallToBackend(recordedA.id)
+        val reportB = callRepository.reportCallToBackend(recordedB.id)
+
+        assertTrue(reportA is AppResult.Success)
+        assertTrue(reportB is AppResult.Success)
+
+        // Verify Call B backend request
+        val reqA = mockWebServer.takeRequest()
+        val reqB = mockWebServer.takeRequest()
+
+        val reqBBody = reqB.body.readUtf8()
+        assertTrue(reqBBody.contains("\"call_direction\":\"MISSED\""))
+        assertTrue(reqBBody.contains("\"call_outcome\":\"Missed\""))
+        assertTrue(reqBBody.contains("\"lead_id\":\"lead_waiting_call_b\""))
+
+        // Step 4: Secondary duplicate run of Call B is properly ignored by deduplication
+        val resBDup = callProcessingManager.processCallEvent(callEventB)
+        assertTrue("Duplicate of Call B must be ignored", resBDup is CallProcessingResult.DuplicateIgnored)
+        assertEquals(2, callDao.count())
+    }
+
+    @Test
+    fun `call-waiting missed call from unknown number is captured as unlinked and synced with autoCreateLead`() = runBlocking {
+        val unknownMissedCall = CallEvent(
+            id = "sys_waiting_unknown_1",
+            rawNumber = "+919999888877",
+            normalizedNumber = "+919999888877",
+            startTimeEpochMs = 1700000050000L,
+            endTimeEpochMs = 1700000050000L,
+            durationSeconds = 0L,
+            direction = CallDirection.MISSED,
+            callType = CallLog.Calls.MISSED_TYPE
+        )
+
+        val result = callProcessingManager.processCallEvent(unknownMissedCall)
+        assertTrue("Unknown missed call must be captured as unlinked inbound", result is CallProcessingResult.UnlinkedIncomingRecorded)
+
+        val unlinked = (result as CallProcessingResult.UnlinkedIncomingRecorded).call
+        assertEquals("Missed", unlinked.callOutcome)
+        assertFalse(unlinked.hasRecording)
+        assertFalse(unlinked.isLeadCall)
+
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(json.encodeToString(
+            CallReportResponse(success = true, callId = "srv_auto_missed_1", leadId = "lead_srv_new_77", message = "Auto lead created")
+        )))
+
+        val reportResult = callRepository.reportCallToBackend(unlinked.id)
+        assertTrue(reportResult is AppResult.Success)
+
+        val recordedRequest = mockWebServer.takeRequest()
+        val reqBody = recordedRequest.body.readUtf8()
+        assertTrue("Backend request must have auto_create_lead = true", reqBody.contains("\"auto_create_lead\":true"))
+        assertTrue("Backend request must have call_direction = MISSED", reqBody.contains("\"call_direction\":\"MISSED\""))
+        assertTrue("Backend request must have call_outcome = Missed", reqBody.contains("\"call_outcome\":\"Missed\""))
+
+        val saved = callDao.getById(unlinked.id)
+        assertNotNull(saved)
+        assertEquals("SYNCED", saved?.syncStatus)
+    }
 }

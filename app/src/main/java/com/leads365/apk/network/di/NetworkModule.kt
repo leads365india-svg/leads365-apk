@@ -170,4 +170,10 @@ object NetworkModule {
     fun provideCloudTelephonyApiService(
         retrofit: Retrofit
     ): com.leads365.apk.telephony.CloudTelephonyApiService = retrofit.create(com.leads365.apk.telephony.CloudTelephonyApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideContactsSyncApiService(
+        retrofit: Retrofit
+    ): com.leads365.apk.network.api.ContactsSyncApiService = retrofit.create(com.leads365.apk.network.api.ContactsSyncApiService::class.java)
 }

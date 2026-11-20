@@ -37,7 +37,10 @@
         android:name="android.hardware.telephony"
         android:required="false" />
 
-    <!-- STRICT PRIVACY: Strictly NO contacts, SMS, location, or microphone permissions -->
+    <!-- Optional READ_CONTACTS permission for WhatsApp QR sync contact-aware lead filtering -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- STRICT PRIVACY: Strictly NO microphone, SMS, or location permissions -->
 
     <application
         android:name=".Leads365App"

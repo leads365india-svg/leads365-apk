@@ -133,6 +133,8 @@ class AuthViewModel @Inject constructor(
                     registerCurrentDevice()
                     workManagerScheduler.get().triggerOneTimeLeadSync(forceFullSync = true)
                     workManagerScheduler.get().schedulePeriodicLeadSync()
+                    workManagerScheduler.get().schedulePeriodicContactsSync()
+                    workManagerScheduler.get().triggerOneTimeContactsSync()
                 }
                 is AppResult.Failure -> {
                     _uiState.update {

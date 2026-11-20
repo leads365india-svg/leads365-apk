@@ -156,6 +156,29 @@ class CallLogReader(
     }
 
     /**
+     * Finds ALL recent calls (incoming, outgoing, missed, rejected) that ended or started
+     * within [lookbackMs] (defaults to 5 minutes / 300,000 ms).
+     *
+     * Crucial for catching multiple calls or call-waiting missed calls that arrived
+     * while the user was active on another call.
+     */
+    fun findRecentCalls(
+        lookbackMs: Long = 300_000L, // 5 minutes safe lookback window
+        queryLimit: Int = 25
+    ): List<CallEvent> {
+        val calls = queryRecentCallEntries(limit = queryLimit)
+        if (calls.isEmpty()) return emptyList()
+
+        val now = System.currentTimeMillis()
+        // Include calls that ended or started within the lookback window (with 30s future tolerance for clock drift)
+        return calls.filter { call ->
+            val timeSinceEnd = now - call.endTimeEpochMs
+            val timeSinceStart = now - call.startTimeEpochMs
+            (timeSinceEnd in -30_000L..lookbackMs) || (timeSinceStart in -30_000L..lookbackMs)
+        }
+    }
+
+    /**
      * Queries recent CallLog entries without tight duration filtering.
      */
     fun queryRecentCallEntries(limit: Int = 10): List<CallEvent> {
@@ -207,6 +230,7 @@ class CallLogReader(
                         CallLog.Calls.INCOMING_TYPE -> CallDirection.INCOMING
                         CallLog.Calls.OUTGOING_TYPE -> CallDirection.OUTGOING
                         CallLog.Calls.MISSED_TYPE -> CallDirection.MISSED
+                        CallLog.Calls.REJECTED_TYPE -> CallDirection.MISSED
                         else -> CallDirection.UNKNOWN
                     }
 

@@ -163,4 +163,20 @@ class ApiEndpointPathResolutionTest {
         assertEquals("/api/follow-ups", getRequest.requestUrl?.encodedPath)
         assertFalse(getRequest.requestUrl?.encodedPath?.contains("/api/api") == true)
     }
+
+    @Test
+    fun `contacts sync endpoint resolves to expected path without duplicate api prefix`() = runBlocking {
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true,"data":{"syncedCount":2}}"""))
+
+        val contactsApi = retrofit.create(com.leads365.apk.network.api.ContactsSyncApiService::class.java)
+        contactsApi.syncContacts(
+            com.leads365.apk.network.models.SyncPhoneContactsRequest(
+                phones = listOf("+919876543210", "+919876543211")
+            )
+        )
+
+        val recorded = mockWebServer.takeRequest()
+        assertEquals("/api/integrations/whatsapp-qr/sync-contacts", recorded.requestUrl?.encodedPath)
+        assertFalse(recorded.requestUrl?.encodedPath?.contains("/api/api") == true)
+    }
 }

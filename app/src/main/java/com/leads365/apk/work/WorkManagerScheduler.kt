@@ -237,6 +237,54 @@ open class WorkManagerScheduler @Inject constructor(
         )
     }
 
+    open fun schedulePeriodicContactsSync() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val periodicSyncRequest = androidx.work.PeriodicWorkRequestBuilder<ContactsSyncWorker>(
+            6, TimeUnit.HOURS
+        )
+            .setConstraints(constraints)
+            .setBackoffCriteria(
+                androidx.work.BackoffPolicy.EXPONENTIAL,
+                androidx.work.WorkRequest.MIN_BACKOFF_MILLIS,
+                TimeUnit.MILLISECONDS
+            )
+            .addTag(ContactsSyncWorker.TAG)
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            ContactsSyncWorker.PERIODIC_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            periodicSyncRequest
+        )
+    }
+
+    open fun triggerOneTimeContactsSync(force: Boolean = false) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val oneTimeRequest = OneTimeWorkRequestBuilder<ContactsSyncWorker>()
+            .setConstraints(constraints)
+            .setInputData(workDataOf(ContactsSyncWorker.KEY_FORCE to force))
+            .setBackoffCriteria(
+                androidx.work.BackoffPolicy.EXPONENTIAL,
+                androidx.work.WorkRequest.MIN_BACKOFF_MILLIS,
+                TimeUnit.MILLISECONDS
+            )
+            .addTag(ContactsSyncWorker.TAG)
+            .build()
+
+        val policy = if (force) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
+        workManager.enqueueUniqueWork(
+            ContactsSyncWorker.ONE_TIME_WORK_NAME,
+            policy,
+            oneTimeRequest
+        )
+    }
+
     companion object {
         private const val TAG = "WorkManagerScheduler"
     }

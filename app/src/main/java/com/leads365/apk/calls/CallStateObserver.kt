@@ -232,19 +232,30 @@ class CallStateObserver(
 
             // Up to 4 polling attempts with delays: 1000ms, 1500ms, 2000ms, 2500ms
             val delays = listOf(1000L, 1500L, 2000L, 2500L)
+            var detectedCalls = emptyList<CallEvent>()
             for ((index, delayMs) in delays.withIndex()) {
                 val attempt = index + 1
                 _monitoringState.value = CallMonitoringState.CallEndedQueryingLog(attempt)
                 delay(delayMs)
 
-                // Query for calls completed in the last 15 minutes
-                call = callLogReader.findMostRecentCall(maxEndRecencyMs = 900_000L)
-                if (call != null) break
+                // Query for calls completed or missed in the last 5 minutes (including call-waiting missed calls)
+                detectedCalls = callLogReader.findRecentCalls(lookbackMs = 300_000L)
+                if (detectedCalls.isNotEmpty()) break
             }
 
-            if (call != null) {
-                _monitoringState.value = CallMonitoringState.CallDetected(call)
-                onCallCompleted(call)
+            if (detectedCalls.isEmpty()) {
+                val singleCall = callLogReader.findMostRecentCall(maxEndRecencyMs = 900_000L)
+                if (singleCall != null) {
+                    detectedCalls = listOf(singleCall)
+                }
+            }
+
+            if (detectedCalls.isNotEmpty()) {
+                val primaryCall = detectedCalls.first()
+                _monitoringState.value = CallMonitoringState.CallDetected(primaryCall)
+                for (detected in detectedCalls) {
+                    onCallCompleted(detected)
+                }
             } else {
                 _monitoringState.value = CallMonitoringState.CallLogUnavailable(
                     "Call ended, but no recent call-log entry was written by the phone's dialer within 7 seconds. Tap 'Check Call Log Now' to re-check."
@@ -260,10 +271,13 @@ class CallStateObserver(
      * without active foreground callbacks.
      */
     fun checkRecentCompletedCall(maxEndRecencyMs: Long = 900_000L): CallEvent? {
-        val call = callLogReader.findMostRecentCall(maxEndRecencyMs = maxEndRecencyMs)
+        val recentCalls = callLogReader.findRecentCalls(lookbackMs = maxEndRecencyMs)
+        val call = recentCalls.firstOrNull() ?: callLogReader.findMostRecentCall(maxEndRecencyMs = maxEndRecencyMs)
         if (call != null) {
             _monitoringState.value = CallMonitoringState.CallDetected(call)
-            onCallCompleted(call)
+            for (c in recentCalls.ifEmpty { listOf(call) }) {
+                onCallCompleted(c)
+            }
         }
         return call
     }

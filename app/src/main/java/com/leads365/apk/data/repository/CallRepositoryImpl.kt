@@ -235,14 +235,25 @@ class CallRepositoryImpl(
             CallLog.Calls.INCOMING_TYPE -> "INCOMING"
             CallLog.Calls.OUTGOING_TYPE -> "OUTGOING"
             CallLog.Calls.MISSED_TYPE -> "MISSED"
-            CallLog.Calls.REJECTED_TYPE -> "REJECTED"
-            else -> "OUTGOING"
+            CallLog.Calls.REJECTED_TYPE -> "MISSED"
+            else -> if (call.callOutcome.equals("Missed", ignoreCase = true)) "MISSED" else "OUTGOING"
         }
 
-        val isAutoLead = call.leadId?.startsWith("lead_auto_") == true ||
+        val isUnlinkedOrAuto = call.leadId.isNullOrBlank() ||
+            call.leadId == "unlinked" ||
+            call.leadId?.startsWith("lead_auto_") == true ||
             call.notes?.contains("Auto-captured") == true ||
-            call.notes?.contains("Unlinked incoming call") == true ||
-            (call.callType == CallLog.Calls.INCOMING_TYPE && (call.leadId.isNullOrBlank() || call.leadId == "unlinked"))
+            call.notes?.contains("Unlinked") == true ||
+            call.notes?.contains("Missed") == true
+
+        val isAutoLead = isUnlinkedOrAuto && (
+            call.callType == CallLog.Calls.INCOMING_TYPE ||
+            call.callType == CallLog.Calls.MISSED_TYPE ||
+            call.callType == CallLog.Calls.REJECTED_TYPE ||
+            call.callOutcome.equals("Missed", ignoreCase = true)
+        )
+
+        val resolvedOutcome = call.callOutcome ?: if (call.callType == CallLog.Calls.MISSED_TYPE || call.callType == CallLog.Calls.REJECTED_TYPE) "Missed" else null
 
         val request = CallReportRequest(
             clientCallId = call.clientCallId,
@@ -251,7 +262,7 @@ class CallRepositoryImpl(
             callDirection = directionStr,
             startTimeMs = call.startTimeEpochMs,
             durationSeconds = call.durationSeconds,
-            callOutcome = call.callOutcome,
+            callOutcome = resolvedOutcome,
             notes = call.notes,
             nextFollowUpAt = call.nextFollowUpEpochMs,
             simId = call.simId,

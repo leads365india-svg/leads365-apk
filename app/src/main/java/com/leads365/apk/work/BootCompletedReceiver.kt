@@ -69,9 +69,10 @@ class BootCompletedReceiver : BroadcastReceiver() {
             null
         } ?: return
 
-        Log.i(TAG, "Reboot detected for authenticated user. Rescheduling periodic lead sync, heartbeat, and pending uploads.")
+        Log.i(TAG, "Reboot detected for authenticated user. Rescheduling periodic lead sync, heartbeat, contacts sync, and pending uploads.")
         scheduler.schedulePeriodicLeadSync()
         scheduler.schedulePeriodicHeartbeat()
+        scheduler.schedulePeriodicContactsSync()
 
         val pendingResult = try {
             goAsync()

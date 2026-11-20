@@ -44,51 +44,63 @@ class CallStateReceiver : BroadcastReceiver() {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val reader = CallLogReader(context.applicationContext)
-                    var call: CallEvent? = null
+                    var detectedCalls = emptyList<CallEvent>()
+
                     // Poll with progressive delays to wait for dialer to flush call log
                     val delays = listOf(1500L, 2000L, 2500L, 3000L)
                     for (d in delays) {
                         delay(d)
-                        call = reader.findMostRecentCall(maxEndRecencyMs = 900_000L)
-                        if (call != null) break
+                        detectedCalls = reader.findRecentCalls(lookbackMs = 300_000L)
+                        if (detectedCalls.isNotEmpty()) break
                     }
 
-                    if (call != null) {
-                        Log.i(TAG, "Call detected from CallLog: raw=${call.rawNumber}, direction=${call.direction}, duration=${call.durationSeconds}s")
+                    // Fallback to findMostRecentCall if findRecentCalls returned empty
+                    if (detectedCalls.isEmpty()) {
+                        val singleCall = reader.findMostRecentCall(maxEndRecencyMs = 900_000L)
+                        if (singleCall != null) {
+                            detectedCalls = listOf(singleCall)
+                        }
+                    }
 
-                        // 1. Notify all registered in-process listeners (e.g. UI/Wizard)
-                        notifyCallDetected(call)
+                    if (detectedCalls.isNotEmpty()) {
+                        Log.i(TAG, "Call(s) detected from CallLog: ${detectedCalls.size} call(s) within lookback window")
 
-                        // 2. Direct pipeline processing (Room DB, Lead check, Targeted Recording Discovery, Upload queue)
-                        try {
-                            val entryPoint = EntryPointAccessors.fromApplication(
-                                context.applicationContext,
-                                CallStateReceiverEntryPoint::class.java
-                            )
-                            val callProcessingManager = entryPoint.callProcessingManager()
-                            Log.d(TAG, "Dispatching call to CallProcessingManager for recording discovery and persistence")
-                            val processResult = callProcessingManager.processCallEvent(call)
+                        val entryPoint = EntryPointAccessors.fromApplication(
+                            context.applicationContext,
+                            CallStateReceiverEntryPoint::class.java
+                        )
+                        val callProcessingManager = entryPoint.callProcessingManager()
+                        val callRepo = entryPoint.callRepository()
 
-                            val clientCallId = when (processResult) {
-                                is CallProcessingResult.Recorded -> processResult.call.clientCallId
-                                is CallProcessingResult.UnlinkedIncomingRecorded -> processResult.call.clientCallId
-                                else -> null
-                            }
+                        for (call in detectedCalls) {
+                            // 1. Notify all registered in-process listeners (e.g. UI/Wizard)
+                            notifyCallDetected(call)
 
-                            if (!clientCallId.isNullOrBlank()) {
-                                try {
-                                    val callRepo = entryPoint.callRepository()
-                                    val reportRes = callRepo.reportCallToBackend(clientCallId)
-                                    Log.i(TAG, "Immediate backend report for call $clientCallId completed: $reportRes")
-                                } catch (syncErr: Exception) {
-                                    Log.w(TAG, "Deferred background sync for $clientCallId: ${syncErr.message}")
+                            // 2. Direct pipeline processing (Room DB, Lead check, Targeted Recording Discovery, Upload queue)
+                            try {
+                                Log.d(TAG, "Dispatching call ${call.id} (direction=${call.direction}, duration=${call.durationSeconds}s) to CallProcessingManager")
+                                val processResult = callProcessingManager.processCallEvent(call)
+
+                                val clientCallId = when (processResult) {
+                                    is CallProcessingResult.Recorded -> processResult.call.clientCallId
+                                    is CallProcessingResult.UnlinkedIncomingRecorded -> processResult.call.clientCallId
+                                    else -> null
                                 }
+
+                                if (!clientCallId.isNullOrBlank()) {
+                                    try {
+                                        val reportRes = callRepo.reportCallToBackend(clientCallId)
+                                        Log.i(TAG, "Immediate backend report for call $clientCallId completed: $reportRes")
+                                    } catch (syncErr: Exception) {
+                                        Log.w(TAG, "Deferred background sync for $clientCallId: ${syncErr.message}")
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to dispatch call ${call.id} to CallProcessingManager: ${e.message}", e)
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to dispatch call to CallProcessingManager: ${e.message}", e)
                         }
                     } else {
-                        Log.w(TAG, "No completed call found in CallLog within recency window")
+                        Log.w(TAG, "No completed or missed call found in CallLog within recency window")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in CallStateReceiver background processing: ${e.message}", e)

@@ -40,6 +40,9 @@ class MainActivity : ComponentActivity() {
     @javax.inject.Inject
     lateinit var leadRepository: dagger.Lazy<com.leads365.apk.data.repository.LeadRepository>
 
+    @javax.inject.Inject
+    lateinit var callRepository: dagger.Lazy<com.leads365.apk.data.repository.CallRepository>
+
     private val viewModel: MainViewModel by viewModels()
     private val leadsViewModel: com.leads365.apk.ui.leads.LeadsViewModel by lazy {
         androidx.lifecycle.ViewModelProvider(this)[com.leads365.apk.ui.leads.LeadsViewModel::class.java]
@@ -58,6 +61,16 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         viewModel.refreshState()
+    }
+
+    private val contactsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val scheduler = workManagerScheduler.get()
+            scheduler.schedulePeriodicContactsSync()
+            scheduler.triggerOneTimeContactsSync(force = true)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,6 +93,8 @@ class MainActivity : ComponentActivity() {
                 scheduler.triggerOneTimeLeadSync()
                 scheduler.schedulePeriodicHeartbeat()
                 scheduler.triggerOneTimeHeartbeat()
+                scheduler.schedulePeriodicContactsSync()
+                scheduler.triggerOneTimeContactsSync()
                 try {
                     scheduler.resumePendingUploads()
                 } catch (e: Exception) {
@@ -102,6 +117,14 @@ class MainActivity : ComponentActivity() {
         }
 
         handleIncomingNotificationIntent(intent)
+
+        lifecycleScope.launch {
+            authRepository.authState.collect { state ->
+                if (state is com.leads365.apk.data.repository.AuthState.Authenticated) {
+                    checkAndRequestContactsPermissionGracefully()
+                }
+            }
+        }
 
         setContent {
             val compositionStartNs = android.os.SystemClock.elapsedRealtimeNanos()
@@ -139,10 +162,24 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val reader = com.leads365.apk.calls.CallLogReader(applicationContext)
-                val recentCalls = reader.queryRecentCallEntries(limit = 20)
+                val recentCalls = reader.findRecentCalls(lookbackMs = 300_000L, queryLimit = 25)
                 val processor = callProcessingManager.get()
+                val repo = callRepository.get()
+
                 for (call in recentCalls) {
-                    processor.processCallEvent(call)
+                    val processResult = processor.processCallEvent(call)
+                    val clientCallId = when (processResult) {
+                        is com.leads365.apk.calls.CallProcessingResult.Recorded -> processResult.call.clientCallId
+                        is com.leads365.apk.calls.CallProcessingResult.UnlinkedIncomingRecorded -> processResult.call.clientCallId
+                        else -> null
+                    }
+                    if (!clientCallId.isNullOrBlank()) {
+                        try {
+                            repo.reportCallToBackend(clientCallId)
+                        } catch (e: Exception) {
+                            // Non-fatal, deferred
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 // Non-blocking background scan
@@ -150,6 +187,7 @@ class MainActivity : ComponentActivity() {
 
             if (authRepository.isLoggedIn()) {
                 try {
+                    callRepository.get().syncPendingCallsToBackend()
                     workManagerScheduler.get().resumePendingUploads()
                 } catch (e: Exception) {
                     // Non-blocking recovery
@@ -228,6 +266,36 @@ class MainActivity : ComponentActivity() {
                         leadsViewModel.selectLeadForDetail(lead)
                     }
                 }
+            }
+        }
+    }
+
+    private fun checkAndRequestContactsPermissionGracefully() {
+        if (!authRepository.isLoggedIn()) return
+        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_CONTACTS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            val scheduler = workManagerScheduler.get()
+            scheduler.schedulePeriodicContactsSync()
+            scheduler.triggerOneTimeContactsSync()
+        } else {
+            val prefs = getSharedPreferences(
+                com.leads365.apk.contacts.PhoneContactsSyncManager.PREFS_NAME,
+                android.content.Context.MODE_PRIVATE
+            )
+            val prompted = prefs.getBoolean(
+                com.leads365.apk.contacts.PhoneContactsSyncManager.KEY_CONTACTS_PERMISSION_PROMPTED,
+                false
+            )
+            if (!prompted) {
+                prefs.edit().putBoolean(
+                    com.leads365.apk.contacts.PhoneContactsSyncManager.KEY_CONTACTS_PERMISSION_PROMPTED,
+                    true
+                ).apply()
+                contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
             }
         }
     }

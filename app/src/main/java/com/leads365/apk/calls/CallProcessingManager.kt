@@ -262,7 +262,11 @@ class CallProcessingManager(
         }
 
         // 4. Assigned-Lead Gate & Unlinked Incoming Customer Detection
-        val isUnlinkedInbound = matchingLead == null && (callEvent.direction == CallDirection.INCOMING || callEvent.direction == CallDirection.MISSED)
+        val isMissed = callEvent.direction == CallDirection.MISSED ||
+            callEvent.callType == CallLog.Calls.MISSED_TYPE ||
+            callEvent.callType == CallLog.Calls.REJECTED_TYPE
+
+        val isUnlinkedInbound = matchingLead == null && (callEvent.direction == CallDirection.INCOMING || isMissed)
 
         if (matchingLead == null && !isUnlinkedInbound) {
             Log.i(TAG, "GATE REJECT: Number $redactedNumber is not an assigned lead. Halting call recording pipeline.")
@@ -312,7 +316,7 @@ class CallProcessingManager(
             else -> if (isUnlinkedInbound) CallLog.Calls.INCOMING_TYPE else CallLog.Calls.OUTGOING_TYPE
         }
 
-        val initialOutcome = if (callEvent.direction == CallDirection.MISSED) "Missed" else null
+        val initialOutcome = if (isMissed) "Missed" else null
 
         val callEntity = CallEntity(
             id = clientCallId,
@@ -327,7 +331,10 @@ class CallProcessingManager(
             notes = if (matchingLead?.id?.startsWith("lead_auto_") == true) {
                 matchingLead.notes
             } else if (isUnlinkedInbound) {
-                "Unlinked incoming call (Website Call attribution unverified)"
+                if (isMissed) "Missed call (Unlinked caller)"
+                else "Unlinked incoming call (Website Call attribution unverified)"
+            } else if (isMissed) {
+                "Missed call"
             } else {
                 null
             },
@@ -348,12 +355,16 @@ class CallProcessingManager(
 
         Log.i(TAG, "Eligible call persisted: clientCallId=$clientCallId, isUnlinked=$isUnlinkedInbound, leadId=${matchingLead?.id}, direction=${callEvent.direction}, duration=${callEvent.durationSeconds}s")
 
-        // Phase 7: Trigger targeted recording discovery if coordinator is configured
-        val discoveryResult = recordingDiscoveryCoordinator?.discoverAndMatchRecording(
-            callEvent = callEvent,
-            lead = matchingLead,
-            callId = clientCallId
-        )
+        // Phase 7: Trigger targeted recording discovery only for answered calls (skip for missed/rejected calls)
+        val discoveryResult = if (!isMissed) {
+            recordingDiscoveryCoordinator?.discoverAndMatchRecording(
+                callEvent = callEvent,
+                lead = matchingLead,
+                callId = clientCallId
+            )
+        } else {
+            null
+        }
 
         val finalCallEntity = if (discoveryResult is DiscoveryResult.Matched) {
             val updated = callEntity.copy(
@@ -375,7 +386,7 @@ class CallProcessingManager(
         }
 
         // Emit for Post-Call outcome prompt (if not missed and lead exists)
-        if (callEvent.direction != CallDirection.MISSED && matchingLead != null) {
+        if (!isMissed && matchingLead != null) {
             _completedLeadCalls.tryEmit(Pair(finalCallEntity, matchingLead))
         }
 
