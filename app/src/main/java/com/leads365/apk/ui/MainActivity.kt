@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
 
             // Only schedule and trigger authenticated background workers if logged in
             if (authRepository.isLoggedIn()) {
+                com.leads365.apk.calls.CallSyncForegroundService.start(applicationContext)
                 val scheduler = workManagerScheduler.get()
                 scheduler.schedulePeriodicLeadSync()
                 scheduler.triggerOneTimeLeadSync()
@@ -120,8 +121,18 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             authRepository.authState.collect { state ->
-                if (state is com.leads365.apk.data.repository.AuthState.Authenticated) {
-                    checkAndRequestContactsPermissionGracefully()
+                when (state) {
+                    is com.leads365.apk.data.repository.AuthState.Authenticated -> {
+                        com.leads365.apk.calls.CallSyncForegroundService.start(applicationContext)
+                        checkAndRequestNotificationPermissionGracefully()
+                        checkAndRequestContactsPermissionGracefully()
+                        checkAndPromptBatteryOptimizationGracefully()
+                    }
+                    is com.leads365.apk.data.repository.AuthState.Unauthenticated,
+                    is com.leads365.apk.data.repository.AuthState.SessionRevoked -> {
+                        com.leads365.apk.calls.CallSyncForegroundService.stop(applicationContext)
+                    }
+                    else -> {}
                 }
             }
         }
@@ -233,9 +244,34 @@ class MainActivity : ComponentActivity() {
     private fun requestIgnoreBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             try {
-                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                // Direct 1-tap system prompt requesting exemption
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
             } catch (e: Exception) {
-                openAppSettings()
+                try {
+                    // Fallback to system battery optimization list
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (e2: Exception) {
+                    openAppSettings()
+                }
+            }
+        }
+    }
+
+    private fun checkAndPromptBatteryOptimizationGracefully() {
+        if (!authRepository.isLoggedIn()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+            val isIgnoring = powerManager?.isIgnoringBatteryOptimizations(packageName) ?: true
+            if (!isIgnoring) {
+                val prefs = getSharedPreferences("leads365_hardening_prefs", android.content.Context.MODE_PRIVATE)
+                val prompted = prefs.getBoolean("battery_optimization_prompted", false)
+                if (!prompted) {
+                    prefs.edit().putBoolean("battery_optimization_prompted", true).apply()
+                    requestIgnoreBatteryOptimization()
+                }
             }
         }
     }
@@ -265,6 +301,25 @@ class MainActivity : ComponentActivity() {
                     res.data?.let { lead ->
                         leadsViewModel.selectLeadForDetail(lead)
                     }
+                }
+            }
+        }
+    }
+
+    private fun checkAndRequestNotificationPermissionGracefully() {
+        if (!authRepository.isLoggedIn()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (!hasPermission) {
+                val prefs = getSharedPreferences("leads365_hardening_prefs", android.content.Context.MODE_PRIVATE)
+                val prompted = prefs.getBoolean("post_notifications_prompted", false)
+                if (!prompted) {
+                    prefs.edit().putBoolean("post_notifications_prompted", true).apply()
+                    permissionsLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
                 }
             }
         }

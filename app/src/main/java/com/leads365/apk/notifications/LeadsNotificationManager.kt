@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -266,14 +267,47 @@ object LeadsNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val contentTitle = if (title.isNotBlank()) "Follow-up: $title" else "Follow-up Reminder"
+        val contentTitle = if (title.isNotBlank()) title else "Follow-up Reminder"
         val bodyText = if (leadName.isNotBlank()) {
             "Lead: $leadName • $leadPhone${if (!notes.isNullOrBlank()) " • $notes" else ""}"
         } else {
             notes?.takeIf { it.isNotBlank() } ?: "Scheduled follow-up is due now"
         }
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID_FOLLOW_UP_REMINDERS)
+        // Direct dial intent for one-click calling
+        val dialPendingIntent = if (leadPhone.isNotBlank()) {
+            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                data = Uri.parse("tel:${leadPhone.trim()}")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            PendingIntent.getActivity(
+                context,
+                ("dial_$followUpId").hashCode(),
+                dialIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else null
+
+        // Open lead details intent
+        val openLeadIntent = Intent(context, MainActivity::class.java).apply {
+            action = if (!leadId.isNullOrBlank()) ACTION_VIEW_LEAD else ACTION_VIEW_FOLLOW_UPS
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (!leadId.isNullOrBlank()) {
+                putExtra(EXTRA_LEAD_ID, leadId)
+                putExtra(EXTRA_DESTINATION, "leads")
+            } else {
+                putExtra(EXTRA_FOLLOW_UP_ID, followUpId)
+                putExtra(EXTRA_DESTINATION, "followups")
+            }
+        }
+        val openLeadPendingIntent = PendingIntent.getActivity(
+            context,
+            ("open_$followUpId").hashCode(),
+            openLeadIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID_FOLLOW_UP_REMINDERS)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(contentTitle)
             .setContentText(bodyText)
@@ -283,7 +317,13 @@ object LeadsNotificationManager {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .build()
+
+        if (dialPendingIntent != null) {
+            builder.addAction(android.R.drawable.sym_action_call, "Call", dialPendingIntent)
+        }
+        builder.addAction(android.R.drawable.ic_menu_view, "Open Lead", openLeadPendingIntent)
+
+        val notification = builder.build()
 
         try {
             val notificationId = NOTIFICATION_ID_BASE_FOLLOW_UP + Math.abs(followUpId.hashCode() % 1000)

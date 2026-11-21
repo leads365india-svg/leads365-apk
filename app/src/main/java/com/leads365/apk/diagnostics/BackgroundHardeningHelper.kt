@@ -185,9 +185,8 @@ object BackgroundHardeningHelper {
 
     fun createBatteryOptimizationIntent(context: Context): Intent {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val listIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-            if (listIntent.resolveActivity(context.packageManager) != null) {
-                return listIntent
+            return Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${context.packageName}")
             }
         }
         return createAppDetailsIntent(context)
@@ -213,24 +212,36 @@ object BackgroundHardeningHelper {
             }
         }
 
-        val intent = createBatteryOptimizationIntent(context).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        return try {
+        try {
+            val intent = createBatteryOptimizationIntent(context).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             context.startActivity(intent)
+            return true
+        } catch (e: Exception) {
+            Log.w(TAG, "Direct battery optimization request failed, trying list settings: ${e.message}")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val listIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(listIntent)
+                    return true
+                }
+            } catch (e2: Exception) {
+                // Fallback to app details
+            }
+        }
+
+        return try {
+            val appDetails = createAppDetailsIntent(context).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(appDetails)
             true
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to launch battery optimization settings; falling back to app details", e)
-            try {
-                val appDetails = createAppDetailsIntent(context).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(appDetails)
-                true
-            } catch (e2: Exception) {
-                Log.e(TAG, "Failed to launch app details settings", e2)
-                false
-            }
+            Log.e(TAG, "Failed to launch app details settings", e)
+            false
         }
     }
 }

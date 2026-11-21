@@ -69,10 +69,13 @@ class BootCompletedReceiver : BroadcastReceiver() {
             null
         } ?: return
 
-        Log.i(TAG, "Reboot detected for authenticated user. Rescheduling periodic lead sync, heartbeat, contacts sync, and pending uploads.")
+        Log.i(TAG, "Reboot detected for authenticated user. Rescheduling periodic lead sync, heartbeat, contacts sync, pending uploads, and starting persistent CallSyncForegroundService.")
         scheduler.schedulePeriodicLeadSync()
         scheduler.schedulePeriodicHeartbeat()
         scheduler.schedulePeriodicContactsSync()
+
+        // Start persistent CallSyncForegroundService so background call tracking is immediately active
+        com.leads365.apk.calls.CallSyncForegroundService.start(context)
 
         val pendingResult = try {
             goAsync()

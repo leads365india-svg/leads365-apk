@@ -32,6 +32,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- Battery optimization exemption request permission for background sync resilience -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- Declare telephony hardware feature as optional so app installs on ChromeOS / non-telephony devices -->
     <uses-feature
         android:name="android.hardware.telephony"
@@ -103,6 +106,12 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Persistent foreground service for call detection, missed call capture, and recording uploads -->
+        <service
+            android:name=".calls.CallSyncForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Expedited WorkManager background service configuration for data synchronization -->
         <service

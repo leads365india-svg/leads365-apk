@@ -31,7 +31,8 @@ class AuthViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val leadRepository: dagger.Lazy<com.leads365.apk.data.repository.LeadRepository>,
     private val callRepository: dagger.Lazy<com.leads365.apk.data.repository.CallRepository>,
-    private val workManagerScheduler: dagger.Lazy<com.leads365.apk.work.WorkManagerScheduler>
+    private val workManagerScheduler: dagger.Lazy<com.leads365.apk.work.WorkManagerScheduler>,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context? = null
 ) : ViewModel() {
 
     constructor(
@@ -43,7 +44,8 @@ class AuthViewModel @Inject constructor(
         authRepository = authRepository,
         leadRepository = dagger.Lazy { leadRepository },
         callRepository = dagger.Lazy { callRepository },
-        workManagerScheduler = dagger.Lazy { workManagerScheduler }
+        workManagerScheduler = dagger.Lazy { workManagerScheduler },
+        context = null
     )
 
     val authState: StateFlow<AuthState> = authRepository.authState
@@ -135,6 +137,7 @@ class AuthViewModel @Inject constructor(
                     workManagerScheduler.get().schedulePeriodicLeadSync()
                     workManagerScheduler.get().schedulePeriodicContactsSync()
                     workManagerScheduler.get().triggerOneTimeContactsSync()
+                    context?.let { com.leads365.apk.calls.CallSyncForegroundService.start(it) }
                 }
                 is AppResult.Failure -> {
                     _uiState.update {
@@ -168,6 +171,7 @@ class AuthViewModel @Inject constructor(
     fun logout(preservePendingUploads: Boolean = true) {
         viewModelScope.launch {
             _uiState.update { it.copy(showLogoutDialog = false, isLoading = true) }
+            context?.let { com.leads365.apk.calls.CallSyncForegroundService.stop(it) }
             authRepository.logout(preservePendingUploads = preservePendingUploads)
             try {
                 leadRepository.get().clearAllLeads()
