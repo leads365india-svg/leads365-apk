@@ -16,7 +16,8 @@ data class CallReportRequest(
     @SerialName("next_followup_at") val nextFollowUpAt: Long? = null,
     @SerialName("sim_id") val simId: String? = null,
     @SerialName("auto_create_lead") val autoCreateLead: Boolean? = null,
-    @SerialName("call_type") val callType: Int? = null
+    @SerialName("call_type") val callType: Int? = null,
+    @SerialName("workspace_id") val workspaceId: String? = null
 )
 
 @Serializable

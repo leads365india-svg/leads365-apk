@@ -9,7 +9,8 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["normalizedNumber"]),
         Index(value = ["startTimeEpochMs"]),
-        Index(value = ["clientCallId"], unique = true)
+        Index(value = ["clientCallId"], unique = true),
+        Index(value = ["workspaceId"])
     ]
 )
 data class CallEntity(
@@ -37,5 +38,6 @@ data class CallEntity(
     val recordingOrigin: String = "sim_call",
     val remoteRecordingUrl: String? = null,
     val isDownloaded: Boolean = false,
-    val localFilePath: String? = null
+    val localFilePath: String? = null,
+    val workspaceId: String? = null
 )

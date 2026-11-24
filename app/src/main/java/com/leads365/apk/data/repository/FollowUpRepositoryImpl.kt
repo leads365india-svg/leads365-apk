@@ -87,7 +87,8 @@ class FollowUpRepositoryImpl @Inject constructor(
         scheduledAtEpochMs: Long,
         priority: String,
         notes: String,
-        sourceCallId: String?
+        sourceCallId: String?,
+        workspaceId: String?
     ): AppResult<FollowUpEntity> {
         val resolvedTitle = if (title.isNotBlank()) title else "Call $leadName"
 
@@ -106,7 +107,8 @@ class FollowUpRepositoryImpl @Inject constructor(
                 scheduledAtEpochMs = scheduledAtEpochMs,
                 sourceCallId = sourceCallId ?: existingMatch.sourceCallId,
                 syncStatus = FollowUpEntity.SYNC_STATUS_PENDING_UPDATE,
-                updatedAtEpochMs = System.currentTimeMillis()
+                updatedAtEpochMs = System.currentTimeMillis(),
+                workspaceId = workspaceId ?: existingMatch.workspaceId
             )
             followUpDao.update(updated)
             scheduleReminder(updated)
@@ -136,7 +138,8 @@ class FollowUpRepositoryImpl @Inject constructor(
             notes = notes,
             sourceCallId = sourceCallId,
             syncStatus = FollowUpEntity.SYNC_STATUS_PENDING_CREATE,
-            updatedAtEpochMs = System.currentTimeMillis()
+            updatedAtEpochMs = System.currentTimeMillis(),
+            workspaceId = workspaceId
         )
 
         // 1. Local-first durable persistence

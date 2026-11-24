@@ -187,18 +187,30 @@ class LeadsViewModel @Inject constructor(
         _uiState.update { it.copy(activePostCall = null) }
     }
 
+    fun getWorkspaces(): List<com.leads365.apk.network.models.WorkspaceDto> {
+        val auth = authRepository?.authState?.value
+        return if (auth is com.leads365.apk.data.repository.AuthState.Authenticated) auth.workspaces else emptyList()
+    }
+
+    fun getActiveWorkspaceId(): String? {
+        val auth = authRepository?.authState?.value
+        return if (auth is com.leads365.apk.data.repository.AuthState.Authenticated) auth.activeWorkspaceId else null
+    }
+
     fun saveCallOutcome(
         callId: String,
         outcome: String,
         notes: String?,
-        nextFollowUpEpochMs: Long?
+        nextFollowUpEpochMs: Long?,
+        selectedWorkspaceId: String? = null
     ) {
         viewModelScope.launch {
             val currentPair = _uiState.value.activePostCall
             val lead = currentPair?.second
+            val effectiveWsId = selectedWorkspaceId ?: lead?.workspaceId ?: getActiveWorkspaceId()
 
             // 1. Update CallEntity in Room
-            callRepository?.updateOutcome(callId, outcome, notes, nextFollowUpEpochMs)
+            callRepository?.updateOutcome(callId, outcome, notes, nextFollowUpEpochMs, effectiveWsId)
 
             // 2. Update LeadEntity status, nextFollowUp, and notes in Room
             if (lead != null) {
@@ -211,6 +223,7 @@ class LeadsViewModel @Inject constructor(
                     status = outcome,
                     nextFollowUpEpochMs = nextFollowUpEpochMs ?: lead.nextFollowUpEpochMs,
                     notes = updatedNotes,
+                    workspaceId = effectiveWsId ?: lead.workspaceId,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 leadRepository.saveLead(updatedLead)
@@ -225,7 +238,8 @@ class LeadsViewModel @Inject constructor(
                             title = "Follow-up ($outcome)",
                             scheduledAtEpochMs = nextFollowUpEpochMs,
                             notes = notes ?: "",
-                            sourceCallId = callId
+                            sourceCallId = callId,
+                            workspaceId = effectiveWsId ?: lead.workspaceId
                         )
                     } catch (e: Exception) {
                         android.util.Log.w("LeadsViewModel", "Error auto-creating follow-up: ${e.message}")

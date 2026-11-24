@@ -21,7 +21,7 @@ import com.leads365.apk.database.entity.FollowUpEntity
         UploadTaskEntity::class,
         FollowUpEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class Leads365Database : RoomDatabase() {
@@ -111,6 +111,20 @@ abstract class Leads365Database : RoomDatabase() {
                 db.execSQL("ALTER TABLE calls ADD COLUMN remoteRecordingUrl TEXT DEFAULT NULL")
                 db.execSQL("ALTER TABLE calls ADD COLUMN isDownloaded INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE calls ADD COLUMN localFilePath TEXT DEFAULT NULL")
+            }
+        }
+
+        /**
+         * Migration from version 6 to version 7 adding Phase 2 workspace partitioning fields
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE calls ADD COLUMN workspaceId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE leads ADD COLUMN workspaceId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE follow_ups ADD COLUMN workspaceId TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_calls_workspaceId ON calls(workspaceId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_leads_workspaceId ON leads(workspaceId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_ups_workspaceId ON follow_ups(workspaceId)")
             }
         }
     }

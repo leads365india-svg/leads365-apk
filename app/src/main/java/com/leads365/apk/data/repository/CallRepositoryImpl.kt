@@ -163,10 +163,11 @@ class CallRepositoryImpl(
         callId: String,
         outcome: String,
         notes: String?,
-        nextFollowUpEpochMs: Long?
+        nextFollowUpEpochMs: Long?,
+        workspaceId: String?
     ): AppResult<Unit> = withContext(ioDispatcher) {
         try {
-            callDao.updateOutcome(callId, outcome, notes, nextFollowUpEpochMs, "PENDING")
+            callDao.updateOutcome(callId, outcome, notes, nextFollowUpEpochMs, "PENDING", workspaceId)
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Failure(AppError.StorageError("Failed to update call outcome: ${e.message}", e))
@@ -267,7 +268,8 @@ class CallRepositoryImpl(
             nextFollowUpAt = call.nextFollowUpEpochMs,
             simId = call.simId,
             autoCreateLead = if (isAutoLead) true else null,
-            callType = call.callType
+            callType = call.callType,
+            workspaceId = call.workspaceId
         )
 
         try {

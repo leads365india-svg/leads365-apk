@@ -13,7 +13,9 @@ sealed class AuthState {
     data class Authenticated(
         val user: UserDto,
         val agency: AgencyDto?,
-        val deviceId: String?
+        val deviceId: String?,
+        val workspaces: List<com.leads365.apk.network.models.WorkspaceDto> = emptyList(),
+        val activeWorkspaceId: String? = null
     ) : AuthState()
     data class SessionRevoked(val reason: String) : AuthState()
     data class UpdateRequired(val minVersionCode: Int, val message: String) : AuthState()
@@ -25,6 +27,9 @@ interface AuthRepository {
     fun getCurrentUser(): UserDto?
     fun getAgencyName(): String?
     fun getDeviceId(): String?
+    fun getWorkspaces(): List<com.leads365.apk.network.models.WorkspaceDto> = emptyList()
+    fun getActiveWorkspaceId(): String? = null
+    fun switchWorkspace(workspaceId: String) {}
 
     suspend fun login(email: String, password: String): AppResult<AuthData>
     suspend fun registerDevice(

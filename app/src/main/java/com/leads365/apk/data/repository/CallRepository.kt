@@ -14,7 +14,10 @@ interface CallRepository {
     suspend fun findCallBySignature(normalizedNumber: String, startTimeEpochMs: Long, toleranceMs: Long = 5000L): AppResult<CallEntity?>
     suspend fun recordCall(call: CallEntity): AppResult<Unit>
     suspend fun updateCall(call: CallEntity): AppResult<Unit>
-    suspend fun updateOutcome(callId: String, outcome: String, notes: String?, nextFollowUpEpochMs: Long?): AppResult<Unit>
+    suspend fun updateOutcome(callId: String, outcome: String, notes: String?, nextFollowUpEpochMs: Long?): AppResult<Unit> =
+        updateOutcome(callId, outcome, notes, nextFollowUpEpochMs, null)
+    suspend fun updateOutcome(callId: String, outcome: String, notes: String?, nextFollowUpEpochMs: Long?, workspaceId: String?): AppResult<Unit> =
+        AppResult.Success(Unit)
     suspend fun updateRecordingMatch(callId: String, hasRecording: Boolean, recordingUri: String?, recordingFileName: String?, recordingFileSizeBytes: Long?): AppResult<Unit>
     suspend fun getPendingSyncCalls(): AppResult<List<CallEntity>>
     suspend fun reportCallToBackend(callId: String): AppResult<com.leads365.apk.network.models.CallReportResponse>

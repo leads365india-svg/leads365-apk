@@ -1,5 +1,6 @@
 package com.leads365.apk.ui.auth
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -90,6 +91,67 @@ fun AccountScreen(
                         DetailRow("Agency", state.agency?.name ?: "Leads365 Direct")
                         if (!state.agency?.accountId.isNullOrBlank()) {
                             DetailRow("Account ID", state.agency?.accountId ?: "")
+                        }
+                    }
+                }
+
+                // Workspace Card (shown when user has assigned workspaces)
+                if (state.workspaces.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = LightSurface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Business, contentDescription = null, tint = BlueAccent)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Workspaces", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Navy900)
+                            }
+
+                            val currentWs = state.workspaces.firstOrNull { it.id == state.activeWorkspaceId }
+                                ?: state.workspaces.firstOrNull { it.isDefault }
+                                ?: state.workspaces.first()
+
+                            DetailRow("Active Workspace", currentWs.name, valueColor = BlueAccent)
+
+                            if (state.workspaces.size > 1) {
+                                Text(
+                                    text = "Switch Workspace:",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextSecondaryLight
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    state.workspaces.forEach { ws ->
+                                        val isSelected = ws.id == state.activeWorkspaceId
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                if (!isSelected) {
+                                                    viewModel.switchWorkspace(ws.id)
+                                                }
+                                            },
+                                            label = {
+                                                Text(
+                                                    text = if (ws.isDefault) "${ws.name} (Default)" else ws.name,
+                                                    fontSize = 11.sp
+                                                )
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = BlueAccent,
+                                                selectedLabelColor = Color.White
+                                            )
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

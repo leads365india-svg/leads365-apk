@@ -25,12 +25,17 @@ import java.util.*
 fun PostCallOutcomeDialog(
     call: CallEntity,
     lead: LeadEntity,
-    onSaveOutcome: (outcome: String, notes: String?, nextFollowUpEpochMs: Long?) -> Unit,
+    workspaces: List<com.leads365.apk.network.models.WorkspaceDto> = emptyList(),
+    activeWorkspaceId: String? = null,
+    onSaveOutcome: (outcome: String, notes: String?, nextFollowUpEpochMs: Long?, selectedWorkspaceId: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedOutcome by remember { mutableStateOf("Connected") }
     var notesText by remember { mutableStateOf("") }
     var selectedFollowUpMs by remember { mutableStateOf<Long?>(null) }
+    var selectedWorkspaceId by remember {
+        mutableStateOf(call.workspaceId ?: lead.workspaceId ?: activeWorkspaceId)
+    }
 
     val outcomeOptions = listOf(
         "Connected",
@@ -91,6 +96,35 @@ fun PostCallOutcomeDialog(
                                 selectedLabelColor = Color.White
                             )
                         )
+                    }
+                }
+
+                // Workspace Selector (visible only when multiple workspaces exist)
+                if (workspaces.size > 1) {
+                    Text(
+                        text = "Attributed Workspace",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = Navy900
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        workspaces.forEach { ws ->
+                            val isSelected = selectedWorkspaceId == ws.id
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selectedWorkspaceId = ws.id },
+                                label = { Text(ws.name, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BlueAccent,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
                     }
                 }
 
@@ -158,7 +192,7 @@ fun PostCallOutcomeDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onSaveOutcome(selectedOutcome, notesText.takeIf { it.isNotBlank() }, selectedFollowUpMs)
+                    onSaveOutcome(selectedOutcome, notesText.takeIf { it.isNotBlank() }, selectedFollowUpMs, selectedWorkspaceId)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Navy900)
             ) {

@@ -132,10 +132,67 @@ class EncryptedTokenProvider(
     fun getUserEmail(): String? = safeGetString(KEY_USER_EMAIL, null)
     fun getAgencyName(): String? = safeGetString(KEY_AGENCY_NAME, null)
 
+    override fun getActiveWorkspaceId(): String? = safeGetString(KEY_ACTIVE_WORKSPACE_ID, null)
+
+    override fun saveActiveWorkspaceId(workspaceId: String?) {
+        safeEdit {
+            if (workspaceId != null) {
+                putString(KEY_ACTIVE_WORKSPACE_ID, workspaceId)
+            } else {
+                remove(KEY_ACTIVE_WORKSPACE_ID)
+            }
+        }
+    }
+
+    override fun getWorkspaces(): List<com.leads365.apk.network.models.WorkspaceDto>? {
+        val raw = safeGetString(KEY_WORKSPACES_JSON, null) ?: return null
+        return try {
+            val array = org.json.JSONArray(raw)
+            val list = mutableListOf<com.leads365.apk.network.models.WorkspaceDto>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    com.leads365.apk.network.models.WorkspaceDto(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        slug = if (obj.has("slug") && !obj.isNull("slug")) obj.getString("slug") else null,
+                        isDefault = obj.optBoolean("isDefault", false),
+                        role = if (obj.has("role") && !obj.isNull("role")) obj.getString("role") else null
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun saveWorkspaces(workspaces: List<com.leads365.apk.network.models.WorkspaceDto>?) {
+        safeEdit {
+            if (workspaces != null) {
+                val array = org.json.JSONArray()
+                workspaces.forEach { ws ->
+                    val obj = org.json.JSONObject()
+                    obj.put("id", ws.id)
+                    obj.put("name", ws.name)
+                    obj.put("slug", ws.slug)
+                    obj.put("isDefault", ws.isDefault)
+                    obj.put("role", ws.role)
+                    array.put(obj)
+                }
+                putString(KEY_WORKSPACES_JSON, array.toString())
+            } else {
+                remove(KEY_WORKSPACES_JSON)
+            }
+        }
+    }
+
     override fun clearTokens() {
         safeEdit {
             remove(KEY_ACCESS_TOKEN)
             remove(KEY_REFRESH_TOKEN)
+            remove(KEY_ACTIVE_WORKSPACE_ID)
+            remove(KEY_WORKSPACES_JSON)
         }
     }
 
@@ -150,6 +207,8 @@ class EncryptedTokenProvider(
             remove(KEY_AGENCY_ACCOUNT_ID)
             remove(KEY_DEVICE_ID)
             remove(KEY_FCM_TOKEN)
+            remove(KEY_ACTIVE_WORKSPACE_ID)
+            remove(KEY_WORKSPACES_JSON)
             // KEY_INSTALL_ID is intentionally preserved across sessions
         }
         try {
@@ -164,6 +223,8 @@ class EncryptedTokenProvider(
                 .remove(KEY_AGENCY_ACCOUNT_ID)
                 .remove(KEY_DEVICE_ID)
                 .remove(KEY_FCM_TOKEN)
+                .remove(KEY_ACTIVE_WORKSPACE_ID)
+                .remove(KEY_WORKSPACES_JSON)
                 .apply()
         } catch (ignored: Exception) {}
     }
@@ -181,5 +242,7 @@ class EncryptedTokenProvider(
         private const val KEY_DEVICE_ID = "key_device_id"
         private const val KEY_INSTALL_ID = "key_install_id"
         private const val KEY_FCM_TOKEN = "key_fcm_token"
+        private const val KEY_ACTIVE_WORKSPACE_ID = "key_active_workspace_id"
+        private const val KEY_WORKSPACES_JSON = "key_workspaces_json"
     }
 }

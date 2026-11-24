@@ -73,6 +73,8 @@ class AuthRepositoryImpl(
             userEmail.isNotBlank() -> userEmail
             else -> "agent_session"
         }
+        val savedWorkspaces = encryptedTokenProvider.getWorkspaces() ?: emptyList()
+        val savedActiveWs = encryptedTokenProvider.getActiveWorkspaceId()
         return AuthState.Authenticated(
             user = UserDto(
                 id = effectiveId,
@@ -80,7 +82,9 @@ class AuthRepositoryImpl(
                 email = userEmail
             ),
             agency = encryptedTokenProvider.getAgencyName()?.let { AgencyDto(id = "agn_local", name = it) },
-            deviceId = encryptedTokenProvider.getDeviceId()
+            deviceId = encryptedTokenProvider.getDeviceId(),
+            workspaces = savedWorkspaces,
+            activeWorkspaceId = savedActiveWs
         )
     }
 
@@ -99,6 +103,23 @@ class AuthRepositoryImpl(
     override fun getAgencyName(): String? = encryptedTokenProvider.getAgencyName()
 
     override fun getDeviceId(): String? = encryptedTokenProvider.getDeviceId()
+
+    override fun getWorkspaces(): List<com.leads365.apk.network.models.WorkspaceDto> =
+        encryptedTokenProvider.getWorkspaces() ?: emptyList()
+
+    override fun getActiveWorkspaceId(): String? =
+        encryptedTokenProvider.getActiveWorkspaceId()
+
+    override fun switchWorkspace(workspaceId: String) {
+        val current = _authState.value
+        if (current is AuthState.Authenticated) {
+            val exists = current.workspaces.any { it.id == workspaceId }
+            if (exists || current.workspaces.isEmpty()) {
+                encryptedTokenProvider.saveActiveWorkspaceId(workspaceId)
+                _authState.value = current.copy(activeWorkspaceId = workspaceId)
+            }
+        }
+    }
 
     override suspend fun login(email: String, password: String): AppResult<AuthData> = withContext(ioDispatcher) {
         if (email.isBlank() || password.isBlank()) {
@@ -159,10 +180,19 @@ class AuthRepositoryImpl(
                 agencyAccountId = authData.agency?.accountId
             )
 
+            // Persist workspaces and resolve initial active workspace
+            encryptedTokenProvider.saveWorkspaces(authData.workspaces)
+            val resolvedActiveWs = authData.activeWorkspaceId
+                ?: authData.workspaces?.firstOrNull { it.isDefault }?.id
+                ?: authData.workspaces?.firstOrNull()?.id
+            encryptedTokenProvider.saveActiveWorkspaceId(resolvedActiveWs)
+
             _authState.value = AuthState.Authenticated(
                 user = authData.user,
                 agency = authData.agency,
-                deviceId = encryptedTokenProvider.getDeviceId()
+                deviceId = encryptedTokenProvider.getDeviceId(),
+                workspaces = authData.workspaces ?: emptyList(),
+                activeWorkspaceId = resolvedActiveWs
             )
 
             // Re-register push token after login / session restoration

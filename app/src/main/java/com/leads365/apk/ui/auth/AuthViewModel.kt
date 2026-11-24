@@ -164,6 +164,17 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    fun switchWorkspace(workspaceId: String) {
+        viewModelScope.launch {
+            authRepository.switchWorkspace(workspaceId)
+            try {
+                leadRepository.get().syncLeads(forceFullSync = true)
+            } catch (e: Exception) {
+                // Non-fatal
+            }
+        }
+    }
+
     fun showLogoutConfirmation(show: Boolean) {
         _uiState.update { it.copy(showLogoutDialog = show) }
     }

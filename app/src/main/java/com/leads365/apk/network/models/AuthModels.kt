@@ -19,12 +19,23 @@ data class LoginResponse(
 )
 
 @Serializable
+data class WorkspaceDto(
+    val id: String,
+    val name: String,
+    val slug: String? = null,
+    val isDefault: Boolean = false,
+    val role: String? = null
+)
+
+@Serializable
 data class AuthData(
     val accessToken: String,
     val refreshToken: String? = null,
     val expiresInSec: Long = 86400L,
     val user: UserDto,
     val agency: AgencyDto? = null,
+    val workspaces: List<WorkspaceDto>? = null,
+    val activeWorkspaceId: String? = null,
     val minVersionCode: Int? = null,
     val isUpdateRequired: Boolean = false,
     val isRevoked: Boolean = false

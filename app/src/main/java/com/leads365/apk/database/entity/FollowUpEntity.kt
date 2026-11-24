@@ -10,7 +10,8 @@ import androidx.room.PrimaryKey
         Index(value = ["status"]),
         Index(value = ["scheduledAtEpochMs"]),
         Index(value = ["leadId"]),
-        Index(value = ["sourceCallId"])
+        Index(value = ["sourceCallId"]),
+        Index(value = ["workspaceId"])
     ]
 )
 data class FollowUpEntity(
@@ -28,7 +29,8 @@ data class FollowUpEntity(
     val assignedTo: String = "",
     val sourceCallId: String? = null,
     val syncStatus: String = SYNC_STATUS_SYNCED,
-    val updatedAtEpochMs: Long = System.currentTimeMillis()
+    val updatedAtEpochMs: Long = System.currentTimeMillis(),
+    val workspaceId: String? = null
 ) {
     companion object {
         const val STATUS_PENDING = "pending"

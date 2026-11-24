@@ -364,8 +364,10 @@ fun LeadsScreen(
         PostCallOutcomeDialog(
             call = call,
             lead = lead,
-            onSaveOutcome = { outcome, notes, followUpMs ->
-                viewModel.saveCallOutcome(call.id, outcome, notes, followUpMs)
+            workspaces = viewModel.getWorkspaces(),
+            activeWorkspaceId = viewModel.getActiveWorkspaceId(),
+            onSaveOutcome = { outcome, notes, followUpMs, selectedWsId ->
+                viewModel.saveCallOutcome(call.id, outcome, notes, followUpMs, selectedWsId)
             },
             onDismiss = {
                 viewModel.dismissPostCallDialog()

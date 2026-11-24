@@ -75,10 +75,17 @@ interface CallDao {
 
     @Query("""
         UPDATE calls 
-        SET callOutcome = :outcome, notes = :notes, nextFollowUpEpochMs = :nextFollowUp, syncStatus = :syncStatus 
+        SET callOutcome = :outcome, notes = :notes, nextFollowUpEpochMs = :nextFollowUp, workspaceId = COALESCE(:workspaceId, workspaceId), syncStatus = :syncStatus 
         WHERE id = :callId OR clientCallId = :callId
     """)
-    suspend fun updateOutcome(callId: String, outcome: String, notes: String?, nextFollowUp: Long?, syncStatus: String = "PENDING"): Int
+    suspend fun updateOutcome(
+        callId: String,
+        outcome: String,
+        notes: String?,
+        nextFollowUp: Long?,
+        syncStatus: String = "PENDING",
+        workspaceId: String? = null
+    ): Int
 
     @Query("UPDATE calls SET syncStatus = :status, syncErrorMessage = :errorMessage WHERE id = :callId OR clientCallId = :callId")
     suspend fun updateSyncStatus(callId: String, status: String, errorMessage: String?): Int

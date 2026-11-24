@@ -30,12 +30,18 @@ class AccessTokenInterceptor(
             builder.header(HEADER_AUTHORIZATION, "Bearer $token")
         }
 
+        val activeWorkspaceId = tokenProvider.getActiveWorkspaceId()
+        if (!activeWorkspaceId.isNullOrBlank()) {
+            builder.header(HEADER_WORKSPACE_ID, activeWorkspaceId)
+        }
+
         return chain.proceed(builder.build())
     }
 
     companion object {
         const val NO_AUTH_HEADER = "No-Authentication"
         const val HEADER_AUTHORIZATION = "Authorization"
+        const val HEADER_WORKSPACE_ID = "X-Workspace-Id"
         const val HEADER_APP_VERSION = "X-App-Version"
         const val HEADER_APP_VERSION_CODE = "X-App-Version-Code"
         const val HEADER_CLIENT_PLATFORM = "X-Client-Platform"
