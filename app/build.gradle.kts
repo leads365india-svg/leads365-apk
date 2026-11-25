@@ -65,6 +65,9 @@ android {
                     ?: System.getenv("RELEASE_KEY_ALIAS")
                 keyPassword = (project.findProperty("RELEASE_KEY_PASSWORD") as? String)
                     ?: System.getenv("RELEASE_KEY_PASSWORD")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -111,6 +114,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/LICENSE*"
             excludes += "/META-INF/NOTICE*"
+            excludes += "DebugProbesKt.bin"
         }
     }
 }

@@ -64,7 +64,27 @@ open class RecordingUploadManager @Inject constructor(
 
     open fun openStream(uriString: String): InputStream? {
         return try {
-            context.contentResolver.openInputStream(Uri.parse(uriString))
+            val parsed = Uri.parse(uriString)
+            when {
+                parsed.scheme.equals("file", ignoreCase = true) -> {
+                    val uriFile = runCatching { java.io.File(java.net.URI(uriString)) }.getOrNull()
+                    val candidatePaths = listOfNotNull(
+                        parsed.path?.takeIf { it.isNotBlank() },
+                        parsed.schemeSpecificPart?.removePrefix("//")?.takeIf { it.isNotBlank() },
+                        uriString.removePrefix("file://").takeIf { it.isNotBlank() }
+                    ).map { it.replaceFirst(Regex("^/([A-Za-z]:)"), "$1") }
+
+                    val file = uriFile?.takeIf { it.exists() }
+                        ?: candidatePaths.asSequence().map { java.io.File(it) }.firstOrNull { it.exists() }
+                        ?: return null
+                    if (file.canRead()) java.io.FileInputStream(file) else null
+                }
+                parsed.scheme.isNullOrBlank() && uriString.startsWith("/") -> {
+                    val file = java.io.File(uriString)
+                    if (file.exists() && file.canRead()) java.io.FileInputStream(file) else null
+                }
+                else -> context.contentResolver.openInputStream(parsed)
+            }
         } catch (e: Exception) {
             null
         }

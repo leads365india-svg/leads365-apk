@@ -134,16 +134,20 @@ class Phase15DistributionAndUpdatesTest {
     }
 
     // =========================================================================
-    // 4. Installer Permission & Intent Configuration
+    // 4. Safe HTTPS Update Link Routing (No In-App APK Sideloading)
     // =========================================================================
 
     @Test
-    fun appUpdateManager_createsValidUnknownSourcesIntent() {
-        val intent = appUpdateManager.createManageUnknownAppSourcesIntent()
-        assertNotNull(intent)
-        assertNotNull(intent.action)
-        assertTrue("Intent must target application settings or unknown sources",
-            intent.action?.contains("UNKNOWN_APP_SOURCES") == true || intent.action?.contains("SECURITY") == true
-        )
+    fun appUpdateManager_opensOnlyHttpsUpdateUrlsSafely() {
+        val validIntent = appUpdateManager.createOpenUpdateUrlIntent("https://leads365.com/download")
+        assertNotNull("Valid HTTPS update URL must produce VIEW intent", validIntent)
+        assertEquals(android.content.Intent.ACTION_VIEW, validIntent?.action)
+        assertEquals("https://leads365.com/download", validIntent?.dataString)
+
+        val cleartextIntent = appUpdateManager.createOpenUpdateUrlIntent("http://leads365.com/download")
+        assertNull("Cleartext HTTP update URL must be rejected", cleartextIntent)
+
+        val emptyIntent = appUpdateManager.createOpenUpdateUrlIntent("   ")
+        assertNull("Blank update URL must be rejected", emptyIntent)
     }
 }

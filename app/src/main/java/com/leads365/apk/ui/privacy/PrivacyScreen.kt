@@ -1,6 +1,11 @@
 package com.leads365.apk.ui.privacy
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,11 +20,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.leads365.apk.calls.WhatsAppAccessibilityHelper
 import com.leads365.apk.database.entity.UploadTaskEntity
 import com.leads365.apk.ui.theme.*
 import java.text.SimpleDateFormat
@@ -136,6 +146,11 @@ fun PrivacyScreen(
                         onToggle = { viewModel.togglePauseSync() }
                     )
                 }
+            }
+
+            // Optional WhatsApp VoIP Call Sync Card
+            item {
+                WhatsAppVoipSetupCard()
             }
 
             // What Was Uploaded Section
@@ -393,6 +408,205 @@ private fun PauseSyncCard(
                         uncheckedTrackColor = TextTertiaryLight
                     )
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WhatsAppVoipSetupCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var hasRecordAudio by remember {
+        mutableStateOf(WhatsAppAccessibilityHelper.hasRecordAudioPermission(context))
+    }
+    var isAccessibilityEnabled by remember {
+        mutableStateOf(WhatsAppAccessibilityHelper.isWhatsAppAccessibilityEnabled(context))
+    }
+    var wasPreviouslyEnabled by remember {
+        mutableStateOf(WhatsAppAccessibilityHelper.wasWhatsAppPreviouslyEnabled(context))
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasRecordAudio = granted || WhatsAppAccessibilityHelper.hasRecordAudioPermission(context)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasRecordAudio = WhatsAppAccessibilityHelper.hasRecordAudioPermission(context)
+                isAccessibilityEnabled = WhatsAppAccessibilityHelper.isWhatsAppAccessibilityEnabled(context)
+                wasPreviouslyEnabled = WhatsAppAccessibilityHelper.wasWhatsAppPreviouslyEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = LightSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Emerald500.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Call,
+                        contentDescription = null,
+                        tint = Emerald700,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "WhatsApp VoIP Call Sync (Optional)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Navy900
+                    )
+                    Text(
+                        text = "Sync WhatsApp and WhatsApp Business calls and audio when enabled",
+                        fontSize = 12.sp,
+                        color = TextSecondaryLight
+                    )
+                }
+            }
+
+            HorizontalDivider(thickness = 1.dp, color = Slate200)
+
+            // Status Row 1: Microphone Access
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Microphone Access",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Navy900
+                )
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (hasRecordAudio) Emerald50 else Slate100
+                ) {
+                    Text(
+                        text = if (hasRecordAudio) "Granted" else "Optional",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (hasRecordAudio) Emerald700 else TextSecondaryLight,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            // Status Row 2: WhatsApp Call Assistant
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "WhatsApp Call Assistant",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Navy900
+                )
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (isAccessibilityEnabled) Emerald50 else Slate100
+                ) {
+                    Text(
+                        text = if (isAccessibilityEnabled) "Enabled" else "Off",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isAccessibilityEnabled) Emerald700 else TextSecondaryLight,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            if (wasPreviouslyEnabled && !isAccessibilityEnabled) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Amber50,
+                    border = BorderStroke(1.dp, Amber200),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Amber600,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "WhatsApp Call Assistant was disabled (this can happen after an APK update). Tap Open Accessibility Settings to re-enable.",
+                            fontSize = 12.sp,
+                            color = Amber900,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!hasRecordAudio) {
+                    Button(
+                        onClick = { audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                        colors = ButtonDefaults.buttonColors(containerColor = BlueAccent),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant Microphone", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                Button(
+                    onClick = { WhatsAppAccessibilityHelper.openAccessibilitySettings(context) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open Accessibility Settings", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    OutlinedButton(
+                        onClick = { WhatsAppAccessibilityHelper.openAppInfoSettings(context) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Unlock Restricted Settings", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
+                    Text(
+                        text = "On Android 13+, open App Info -> three-dot menu -> Allow restricted settings before enabling Accessibility.",
+                        fontSize = 11.sp,
+                        color = TextSecondaryLight,
+                        lineHeight = 15.sp
+                    )
+                }
             }
         }
     }

@@ -1,11 +1,8 @@
 package com.leads365.apk.ui.leads
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.leads365.apk.calls.CallProcessingManager
@@ -159,16 +156,9 @@ class LeadsViewModel @Inject constructor(
         pendingCallManager?.setPendingCall(lead)
 
         val rawNum = lead.rawNumber.trim()
-        val hasDirectCallPerm = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.CALL_PHONE
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val intent = if (preferDirectCall && hasDirectCallPerm) {
-            Intent(Intent.ACTION_CALL, Uri.parse("tel:$rawNum"))
-        } else {
-            Intent(Intent.ACTION_DIAL, Uri.parse("tel:$rawNum"))
-        }
+        @Suppress("UNUSED_VARIABLE")
+        val _ignoredPreferDirectCall = preferDirectCall
+        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$rawNum"))
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         try {

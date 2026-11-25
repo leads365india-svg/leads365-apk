@@ -297,6 +297,8 @@ class CallRepositoryImpl(
 
         val resolvedOutcome = call.callOutcome ?: if (call.callType == CallLog.Calls.MISSED_TYPE || call.callType == CallLog.Calls.REJECTED_TYPE) "Missed" else null
 
+        val isWhatsAppVoip = call.recordingOrigin == "whatsapp_voip"
+
         val request = CallReportRequest(
             clientCallId = call.clientCallId,
             leadId = call.leadId ?: "",
@@ -310,7 +312,12 @@ class CallRepositoryImpl(
             simId = call.simId,
             autoCreateLead = if (isAutoLead) true else null,
             callType = call.callType,
-            workspaceId = call.workspaceId
+            workspaceId = call.workspaceId,
+            source = if (isWhatsAppVoip) "whatsapp_voip" else "android_sync",
+            contactName = if (isWhatsAppVoip && call.rawNumber.isNotBlank()) call.rawNumber else null,
+            sourceApp = if (isWhatsAppVoip) {
+                if (call.notes?.contains("Business", ignoreCase = true) == true) "com.whatsapp.w4b" else "com.whatsapp"
+            } else null
         )
 
         try {
@@ -535,6 +542,7 @@ class CallRepositoryImpl(
                             callOutcome = serverOutcome,
                             notes = dto.notes,
                             hasRecording = hasRec,
+                            recordingOrigin = if (dto.source == "whatsapp_voip") "whatsapp_voip" else "sim_call",
                             syncStatus = "SYNCED",
                             createdAtEpochMs = startTime,
                             workspaceId = effectiveWorkspaceId,

@@ -17,7 +17,10 @@ data class CallReportRequest(
     @SerialName("sim_id") val simId: String? = null,
     @SerialName("auto_create_lead") val autoCreateLead: Boolean? = null,
     @SerialName("call_type") val callType: Int? = null,
-    @SerialName("workspace_id") val workspaceId: String? = null
+    @SerialName("workspace_id") val workspaceId: String? = null,
+    @SerialName("source") val source: String? = null,
+    @SerialName("contact_name") val contactName: String? = null,
+    @SerialName("source_app") val sourceApp: String? = null
 )
 
 @Serializable
@@ -50,7 +53,8 @@ data class CallDto(
     @SerialName("recordingFileId") val recordingFileId: String? = null,
     @SerialName("isUnlinked") val isUnlinked: Boolean = false,
     @SerialName("tenantId") val tenantId: String? = null,
-    @SerialName("workspaceId") val workspaceId: String? = null
+    @SerialName("workspaceId") val workspaceId: String? = null,
+    @SerialName("source") val source: String? = null
 )
 
 @Serializable

@@ -121,21 +121,6 @@ class DiagnosticsManager(
             )
         )
 
-        // Optional direct calling permission (with dialer fallback)
-        val callPhoneGranted = ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.CALL_PHONE
-        ) == PackageManager.PERMISSION_GRANTED
-        items.add(
-            PermissionItem(
-                id = "perm_call_phone",
-                title = "Direct Calling (Optional)",
-                rationale = "Allows one-tap direct calling from the app. If not granted, calls will open in your default phone dialer.",
-                status = if (callPhoneGranted) PermissionStatus.GRANTED else PermissionStatus.NOT_GRANTED,
-                isMandatory = false
-            )
-        )
-
         // Post Notifications permission (API 33+; granted automatically on older versions)
         val notifGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
@@ -149,28 +134,8 @@ class DiagnosticsManager(
             PermissionItem(
                 id = "perm_notifications",
                 title = "Post Notifications",
-                rationale = "Alerts the user when a test call is matched or when background observation completes.",
+                rationale = "Alerts the user when a test call is matched, displays caller ID heads-up cards, or reports background observation.",
                 status = if (notifGranted) PermissionStatus.GRANTED else PermissionStatus.NOT_GRANTED,
-                isMandatory = false
-            )
-        )
-
-        // Optional overlay permission for caller pop-ups
-        val overlayGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                android.provider.Settings.canDrawOverlays(context)
-            } catch (e: Exception) {
-                false
-            }
-        } else {
-            true
-        }
-        items.add(
-            PermissionItem(
-                id = "perm_overlay",
-                title = "Caller Pop-up Window (Optional)",
-                rationale = "Allows display of lead identification badges over incoming or outgoing calls.",
-                status = if (overlayGranted) PermissionStatus.GRANTED else PermissionStatus.NOT_GRANTED,
                 isMandatory = false
             )
         )
@@ -196,6 +161,34 @@ class DiagnosticsManager(
                 title = "Background Execution / Battery (Optional)",
                 rationale = "Prevents Android from stopping background call observation and delayed recording discovery.",
                 status = if (batteryOptIgnored) PermissionStatus.GRANTED else PermissionStatus.NOT_GRANTED,
+                isMandatory = false
+            )
+        )
+
+        items.add(
+            PermissionItem(
+                id = "perm_record_audio",
+                title = "Microphone Access (WhatsApp Calls)",
+                rationale = "Optional: captures audio during WhatsApp and WhatsApp Business VoIP calls when enabled.",
+                status = if (com.leads365.apk.calls.WhatsAppAccessibilityHelper.hasRecordAudioPermission(context)) {
+                    PermissionStatus.GRANTED
+                } else {
+                    PermissionStatus.NOT_GRANTED
+                },
+                isMandatory = false
+            )
+        )
+
+        items.add(
+            PermissionItem(
+                id = "perm_whatsapp_a11y",
+                title = "WhatsApp Call Assistant",
+                rationale = "Optional: detects active WhatsApp and WhatsApp Business calls to sync call duration and recordings.",
+                status = if (com.leads365.apk.calls.WhatsAppAccessibilityHelper.isWhatsAppAccessibilityEnabled(context)) {
+                    PermissionStatus.GRANTED
+                } else {
+                    PermissionStatus.NOT_GRANTED
+                },
                 isMandatory = false
             )
         )

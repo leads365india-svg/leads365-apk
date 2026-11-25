@@ -198,6 +198,23 @@ class RecordingUploadWorker(
                         recordingFileSizeBytes = task.fileSizeBytes
                     )
                 }
+                try {
+                    val parsedUri = android.net.Uri.parse(currentTask.localFileUri)
+                    val candidatePath = when {
+                        parsedUri.scheme.equals("file", ignoreCase = true) -> parsedUri.path
+                        parsedUri.scheme.isNullOrBlank() && currentTask.localFileUri.startsWith("/") -> currentTask.localFileUri
+                        else -> null
+                    }
+                    if (!candidatePath.isNullOrBlank()) {
+                        val voipDir = java.io.File(applicationContext.filesDir, "voip_recordings").canonicalFile
+                        val targetFile = java.io.File(candidatePath).canonicalFile
+                        if (targetFile.path.startsWith(voipDir.path + java.io.File.separator) && targetFile.exists()) {
+                            targetFile.delete()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Non-fatal cleanup error for VoIP recording: ${e.message}")
+                }
                 showNotification(applicationContext, task.fileName, "Upload complete", isComplete = true)
                 Result.success()
             }

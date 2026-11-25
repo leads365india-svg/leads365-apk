@@ -460,6 +460,21 @@ fun CallRecordCard(
                                     )
                                 }
                             }
+                            if (item.recordingOrigin == "whatsapp_voip") {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF10B981).copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "WhatsApp",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF047857),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
                         }
                         Text(
                             text = "$directionLabel • $dateStr",

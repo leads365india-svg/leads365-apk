@@ -189,19 +189,25 @@ class Phase4PermissionsAndOnboardingTest {
         )
         val items = diag.checkPermissions()
 
-        val itemIds = items.map { it.id.lowercase() }
-        val titles = items.map { it.title.lowercase() }
+        // Optional WhatsApp VoIP permissions must never become mandatory
+        items.filter { it.id == "perm_record_audio" || it.id == "perm_whatsapp_a11y" }.forEach { opt ->
+            assertFalse("WhatsApp VoIP permission ${opt.id} must remain optional", opt.isMandatory)
+        }
 
-        // Must NOT request microphone, contacts, sms, or location
+        // Core cellular/mandatory permissions must NEVER request microphone, contacts, sms, or location
+        val coreSimItems = items.filter { it.id != "perm_record_audio" }
+        val itemIds = coreSimItems.map { it.id.lowercase() }
+        val titles = coreSimItems.map { it.title.lowercase() }
+
         for (id in itemIds) {
-            assertFalse("Must not request microphone access", id.contains("mic") || id.contains("record_audio"))
+            assertFalse("Must not request microphone access for core SIM flow", id.contains("mic") || id.contains("record_audio"))
             assertFalse("Must not request contacts access", id.contains("contact"))
             assertFalse("Must not request SMS access", id.contains("sms"))
             assertFalse("Must not request location access", id.contains("location"))
         }
 
         for (title in titles) {
-            assertFalse("Title must not mention microphone", title.contains("microphone"))
+            assertFalse("Title must not mention microphone for core SIM flow", title.contains("microphone"))
             assertFalse("Title must not mention contacts", title.contains("contacts"))
             assertFalse("Title must not mention sms", title.contains("sms"))
             assertFalse("Title must not mention location", title.contains("location"))

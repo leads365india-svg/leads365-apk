@@ -51,3 +51,7 @@
     public static int v(...);
     public static int d(...);
 }
+
+# WhatsApp VoIP Call Recording Services
+-keep class com.leads365.apk.calls.WhatsAppCallAccessibilityService { *; }
+-keep class com.leads365.apk.recordings.VoipRecordingService { *; }

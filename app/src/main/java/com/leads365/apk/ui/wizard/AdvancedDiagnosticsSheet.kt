@@ -90,7 +90,7 @@ fun AdvancedDiagnosticsSheet(
                         value = endpointUrl,
                         onValueChange = onEndpointChanged,
                         label = { Text("Endpoint URL") },
-                        placeholder = { Text("http://192.168.1.X:8080/upload") },
+                        placeholder = { Text("https://staging.example.com/upload") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)

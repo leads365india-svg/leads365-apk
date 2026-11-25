@@ -622,7 +622,7 @@ fun TestUploadPanelCard(
                 value = endpointUrl,
                 onValueChange = onEndpointChanged,
                 label = { Text("Test Upload Endpoint URL") },
-                placeholder = { Text("http://192.168.1.X:8080/upload") },
+                placeholder = { Text("https://staging.example.com/upload") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(

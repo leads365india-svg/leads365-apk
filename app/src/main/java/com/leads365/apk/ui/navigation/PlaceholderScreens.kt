@@ -1,6 +1,4 @@
 package com.leads365.apk.ui.navigation
-import android.os.Build
-import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -57,11 +55,6 @@ fun SettingsScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    var hasOverlayPermission by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(context) else true
-        )
-    }
     var isBatteryOptimizationIgnored by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(
             BackgroundHardeningHelper.isBatteryOptimizationIgnored(context)
@@ -71,11 +64,6 @@ fun SettingsScreen(
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                hasOverlayPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    Settings.canDrawOverlays(context)
-                } else {
-                    true
-                }
                 isBatteryOptimizationIgnored = BackgroundHardeningHelper.isBatteryOptimizationIgnored(context)
             }
         }
@@ -612,7 +600,7 @@ fun SettingsScreen(
             }
         }
 
-        // Phase 10: Caller Identification Pop-up & Overlay Permission
+        // Phase 10: Caller Identification Pop-up via Heads-Up Notifications
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = LightSurface),
@@ -634,12 +622,12 @@ fun SettingsScreen(
                         color = Navy900
                     )
                     Surface(
-                        color = if (hasOverlayPermission) TealSuccess.copy(alpha = 0.15f) else BlueAccent.copy(alpha = 0.15f),
+                        color = BlueAccent.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = if (hasOverlayPermission) "OVERLAY ACTIVE" else "HEADS-UP FALLBACK",
-                            color = if (hasOverlayPermission) TealSuccess else BlueAccent,
+                            text = "HEADS-UP ALERTS",
+                            color = BlueAccent,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -653,7 +641,7 @@ fun SettingsScreen(
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     Text(
-                        text = if (hasOverlayPermission) "Manage Overlay Permission" else "Enable Overlay Pop-up",
+                        text = "Manage Notification Alerts",
                         fontSize = 12.sp
                     )
                 }

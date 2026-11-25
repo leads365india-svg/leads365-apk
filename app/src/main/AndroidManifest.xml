@@ -18,13 +18,6 @@
     <!-- Notifications for background test events (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Phase 4: Optional direct calling permission (with ACTION_DIAL fallback) -->
-    <uses-permission android:name="android.permission.CALL_PHONE" />
-
-    <!-- Phase 4: Optional overlay permission for caller pop-up windows -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
-
     <!-- Phase 12: Boot completed permission for WorkManager and BootCompletedReceiver -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -40,31 +33,25 @@
         android:name="android.hardware.telephony"
         android:required="false" />
 
+    <!-- Optional VoIP audio capture permissions for opt-in WhatsApp call recording -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
     <!-- Optional READ_CONTACTS permission for WhatsApp QR sync contact-aware lead filtering -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
-    <!-- STRICT PRIVACY: Strictly NO microphone, SMS, or location permissions -->
+    <!-- STRICT PRIVACY: Microphone permission is strictly opt-in for WhatsApp VoIP call recording (never used for SIM calls or background listening); strictly NO SMS or location permissions -->
 
     <application
         android:name=".Leads365App"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Leads365">
-
-        <!-- Phase 15: FileProvider for secure in-app APK update installation -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
 
         <activity
             android:name=".ui.MainActivity"
@@ -118,6 +105,26 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+
+        <!-- Phase 3: Opt-in Accessibility Service for WhatsApp & WhatsApp Business VoIP Call Detection -->
+        <service
+            android:name=".calls.WhatsAppCallAccessibilityService"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/whatsapp_accessibility_config" />
+        </service>
+
+        <!-- Phase 3: Opt-in Foreground Service for WhatsApp VoIP Audio Capture -->
+        <service
+            android:name=".recordings.VoipRecordingService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
 
     </application>
 

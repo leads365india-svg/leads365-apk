@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
-import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.google.firebase.FirebaseApp
 import com.leads365.apk.core.AppResult
@@ -122,32 +121,31 @@ open class SelfTestRunner @Inject constructor(
     }
 
     private fun checkCallerOverlay(): DiagnosticItem {
-        val canDraw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                Settings.canDrawOverlays(context)
-            } catch (e: Exception) {
-                false
-            }
+        val postNotifGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
         } else {
             true
         }
 
-        return if (canDraw) {
+        return if (postNotifGranted) {
             DiagnosticItem(
                 id = "diag_caller_overlay",
-                title = "Caller Pop-up Overlay",
+                title = "Caller Identification Alerts",
                 category = DiagnosticCategory.CALL_DETECTION,
                 status = DiagnosticStatus.PASS,
-                summary = "SYSTEM_ALERT_WINDOW permission granted. Floating caller ID cards are active."
+                summary = "Heads-up caller ID notifications are active for matched leads."
             )
         } else {
             DiagnosticItem(
                 id = "diag_caller_overlay",
-                title = "Caller Pop-up Overlay",
+                title = "Caller Identification Alerts",
                 category = DiagnosticCategory.CALL_DETECTION,
                 status = DiagnosticStatus.WARNING,
-                summary = "Overlay permission disabled. Floating badges inactive; high-priority heads-up notifications active as fallback.",
-                actionableStep = "Tap 'Enable Overlay Pop-up' in Settings to grant Display over other apps."
+                summary = "Notification permission is disabled. Grant notifications to view heads-up caller ID cards.",
+                actionableStep = "Enable Notifications in App Settings to display caller ID cards."
             )
         }
     }

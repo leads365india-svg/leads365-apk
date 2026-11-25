@@ -224,20 +224,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestDirectCallPermission() {
-        permissionsLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE))
+        // Direct CALL_PHONE permission removed; dialing safely opens the native dialer via ACTION_DIAL.
+        openAppSettings()
     }
 
     private fun openOverlaySettings() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                startActivity(intent)
-            } catch (e: Exception) {
-                openAppSettings()
+        try {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
             }
+            startActivity(intent)
+        } catch (e: Exception) {
+            openAppSettings()
         }
     }
 
