@@ -48,6 +48,7 @@ class CallStateObserver(
     private var previousState = TelephonyManager.CALL_STATE_IDLE
     private var isListening = false
     private var isQueryingCallLog = false
+    private var hasPendingQuery = false
     private var activeQueryJob: Job? = null
 
     private var legacyListener: PhoneStateListener? = null
@@ -211,57 +212,65 @@ class CallStateObserver(
      * OEM dialers (Vivo Funtouch OS, Xiaomi MIUI, Samsung Knox).
      */
     fun triggerCallLogLookup() {
-        if (isQueryingCallLog) return
-        activeQueryJob?.cancel()
+        if (isQueryingCallLog) {
+            hasPendingQuery = true
+            return
+        }
 
         activeQueryJob = scope.launch {
-            isQueryingCallLog = true
-            var call: CallEvent? = null
+            try {
+                isQueryingCallLog = true
+                var call: CallEvent? = null
 
-            // Check if call log permission is granted
-            val accessStatus = callLogReader.checkCallLogAccess()
-            if (accessStatus == CallLogAccessStatus.PERMISSION_DENIED ||
-                accessStatus == CallLogAccessStatus.RESTRICTED_BY_PLATFORM
-            ) {
-                _monitoringState.value = CallMonitoringState.CallLogUnavailable(
-                    "Call Log access is restricted or denied by Android. Grant Call Log access to detect calls."
-                )
+                // Check if call log permission is granted
+                val accessStatus = callLogReader.checkCallLogAccess()
+                if (accessStatus == CallLogAccessStatus.PERMISSION_DENIED ||
+                    accessStatus == CallLogAccessStatus.RESTRICTED_BY_PLATFORM
+                ) {
+                    _monitoringState.value = CallMonitoringState.CallLogUnavailable(
+                        "Call Log access is restricted or denied by Android. Grant Call Log access to detect calls."
+                    )
+                    return@launch
+                }
+
+                // Up to 4 polling attempts with delays: 1000ms, 1500ms, 2000ms, 2500ms
+                val delays = listOf(1000L, 1500L, 2000L, 2500L)
+                var detectedCalls = emptyList<CallEvent>()
+                for ((index, delayMs) in delays.withIndex()) {
+                    val attempt = index + 1
+                    _monitoringState.value = CallMonitoringState.CallEndedQueryingLog(attempt)
+                    delay(delayMs)
+
+                    // Query for calls completed or missed in the last 5 minutes (including call-waiting missed calls)
+                    detectedCalls = callLogReader.findRecentCalls(lookbackMs = 300_000L)
+                    if (detectedCalls.isNotEmpty()) break
+                }
+
+                if (detectedCalls.isEmpty()) {
+                    val singleCall = callLogReader.findMostRecentCall(maxEndRecencyMs = 900_000L)
+                    if (singleCall != null) {
+                        detectedCalls = listOf(singleCall)
+                    }
+                }
+
+                if (detectedCalls.isNotEmpty()) {
+                    val primaryCall = detectedCalls.first()
+                    _monitoringState.value = CallMonitoringState.CallDetected(primaryCall)
+                    for (detected in detectedCalls) {
+                        onCallCompleted(detected)
+                    }
+                } else {
+                    _monitoringState.value = CallMonitoringState.CallLogUnavailable(
+                        "Call ended, but no recent call-log entry was written by the phone's dialer within 7 seconds. Tap 'Check Call Log Now' to re-check."
+                    )
+                }
+            } finally {
                 isQueryingCallLog = false
-                return@launch
-            }
-
-            // Up to 4 polling attempts with delays: 1000ms, 1500ms, 2000ms, 2500ms
-            val delays = listOf(1000L, 1500L, 2000L, 2500L)
-            var detectedCalls = emptyList<CallEvent>()
-            for ((index, delayMs) in delays.withIndex()) {
-                val attempt = index + 1
-                _monitoringState.value = CallMonitoringState.CallEndedQueryingLog(attempt)
-                delay(delayMs)
-
-                // Query for calls completed or missed in the last 5 minutes (including call-waiting missed calls)
-                detectedCalls = callLogReader.findRecentCalls(lookbackMs = 300_000L)
-                if (detectedCalls.isNotEmpty()) break
-            }
-
-            if (detectedCalls.isEmpty()) {
-                val singleCall = callLogReader.findMostRecentCall(maxEndRecencyMs = 900_000L)
-                if (singleCall != null) {
-                    detectedCalls = listOf(singleCall)
+                if (hasPendingQuery) {
+                    hasPendingQuery = false
+                    triggerCallLogLookup()
                 }
             }
-
-            if (detectedCalls.isNotEmpty()) {
-                val primaryCall = detectedCalls.first()
-                _monitoringState.value = CallMonitoringState.CallDetected(primaryCall)
-                for (detected in detectedCalls) {
-                    onCallCompleted(detected)
-                }
-            } else {
-                _monitoringState.value = CallMonitoringState.CallLogUnavailable(
-                    "Call ended, but no recent call-log entry was written by the phone's dialer within 7 seconds. Tap 'Check Call Log Now' to re-check."
-                )
-            }
-            isQueryingCallLog = false
         }
     }
 

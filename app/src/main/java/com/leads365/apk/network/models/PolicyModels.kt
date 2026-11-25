@@ -12,7 +12,7 @@ data class PolicyData(
     @SerialName("allow_recording_pause") val allowRecordingPause: Boolean = true,
     @SerialName("recording_sync_paused") val recordingSyncPaused: Boolean = false,
     @SerialName("enforce_strict_dnr") val enforceStrictDnr: Boolean = true,
-    @SerialName("auto_lead_capture_enabled") val autoLeadCaptureEnabled: Boolean = false,
+    @SerialName("auto_lead_capture_enabled") val autoLeadCaptureEnabled: Boolean = true,
     @SerialName("auto_lead_min_duration_seconds") val autoLeadMinDurationSeconds: Int = 10,
     @SerialName("server_time") val serverTime: Long = System.currentTimeMillis()
 )
@@ -45,7 +45,7 @@ data class AutoLeadPolicyRequest(
 
 @Serializable
 data class AutoLeadPolicyData(
-    @SerialName("auto_lead_capture_enabled") val autoLeadCaptureEnabled: Boolean = false,
+    @SerialName("auto_lead_capture_enabled") val autoLeadCaptureEnabled: Boolean = true,
     @SerialName("auto_lead_min_duration_seconds") val autoLeadMinDurationSeconds: Int = 10
 )
 

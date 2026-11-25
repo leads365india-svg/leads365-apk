@@ -138,9 +138,10 @@ class AutoLeadCreationPipelineTest {
     }
 
     @Test
-    fun testAutoLeadCreationDisabledByDefault_incomingCallFromUnknownNumber_doesNotCreateLead() = runBlocking {
-        // Given feature is OFF by default
-        assertFalse("Feature must be disabled by default", autoLeadCaptureConfig.isAutoLeadCreationEnabled())
+    fun testAutoLeadCreationExplicitlyDisabled_incomingCallFromUnknownNumber_doesNotCreateLead() = runBlocking {
+        // Given feature is explicitly turned OFF
+        autoLeadCaptureConfig.setAutoLeadCreationEnabled(false)
+        assertFalse("Feature must be disabled when set to false", autoLeadCaptureConfig.isAutoLeadCreationEnabled())
 
         val event = CallEvent(
             id = "call_evt_101",
@@ -164,6 +165,13 @@ class AutoLeadCreationPipelineTest {
         // Database check: 0 leads exist in Room
         val allLeads = (leadRepository.getAllLeads() as AppResult.Success).data
         assertEquals(0, allLeads.size)
+    }
+
+    @Test
+    fun testAutoLeadCreationEnabledByDefault_incomingCallFromUnknownNumber_createsLead() = runBlocking {
+        // Given default preference configuration (DEFAULT_ENABLED = true)
+        val freshConfig = AutoLeadCaptureConfig(context)
+        assertTrue("Feature must be enabled by default", freshConfig.isAutoLeadCreationEnabled())
     }
 
     @Test
@@ -212,7 +220,7 @@ class AutoLeadCreationPipelineTest {
     }
 
     @Test
-    fun testAutoLeadCreationEnabled_missedCall_doesNotCreateLead() = runBlocking {
+    fun testAutoLeadCreationEnabled_missedCall_createsLeadAndAttachesCall() = runBlocking {
         // Given feature is ON
         autoLeadCaptureConfig.setAutoLeadCreationEnabled(true)
 
@@ -229,10 +237,20 @@ class AutoLeadCreationPipelineTest {
         // When
         val result = callProcessingManager.processCallEvent(missedEvent)
 
-        // Then
-        assertTrue("Missed calls must not auto-create leads", result is CallProcessingResult.UnlinkedIncomingRecorded)
+        // Then: Result is Recorded with auto-created Lead for missed call
+        assertTrue("Missed calls must auto-create leads when enabled", result is CallProcessingResult.Recorded)
+        val recorded = result as CallProcessingResult.Recorded
+        val autoLead = recorded.lead
+
+        assertTrue("Auto lead ID must start with lead_auto_", autoLead.id.startsWith("lead_auto_"))
+        assertEquals("Unknown Caller - +919876543210", autoLead.name)
+        assertEquals("+919876543210", autoLead.normalizedNumber)
+        assertEquals("New", autoLead.status)
+        assertEquals("Auto-captured from missed incoming call", autoLead.notes)
+        assertTrue("Call must be marked isLeadCall = true", recorded.call.isLeadCall)
+        assertEquals("Missed", recorded.call.callOutcome)
         val allLeads = (leadRepository.getAllLeads() as AppResult.Success).data
-        assertEquals("No lead should be created for missed call", 0, allLeads.size)
+        assertEquals("1 lead should be created for missed call", 1, allLeads.size)
     }
 
     @Test
@@ -441,17 +459,18 @@ class AutoLeadCreationPipelineTest {
 
         autoLeadCaptureConfig.setAutoLeadCreationEnabled(true, tenantA)
         autoLeadCaptureConfig.setMinDurationSeconds(15, tenantA)
+        autoLeadCaptureConfig.setAutoLeadCreationEnabled(false, tenantB)
 
         assertTrue("Tenant A must have feature enabled", autoLeadCaptureConfig.isAutoLeadCreationEnabled(tenantA))
         assertEquals(15, autoLeadCaptureConfig.getMinDurationSeconds(tenantA))
 
-        // Tenant B must strictly remain disabled with default 10s threshold
+        // Tenant B must strictly remain disabled
         assertFalse("Tenant B must remain disabled", autoLeadCaptureConfig.isAutoLeadCreationEnabled(tenantB))
         assertEquals(10, autoLeadCaptureConfig.getMinDurationSeconds(tenantB))
     }
 
     @Test
-    fun testAutoLeadCreationEnabled_oemRejectedCallWithRingDuration_doesNotCreateLead() = runBlocking {
+    fun testAutoLeadCreationEnabled_oemRejectedCallWithRingDuration_createsLead() = runBlocking {
         // Given feature is ON
         autoLeadCaptureConfig.setAutoLeadCreationEnabled(true)
         autoLeadCaptureConfig.setMinDurationSeconds(10)
@@ -470,13 +489,16 @@ class AutoLeadCreationPipelineTest {
 
         val result = callProcessingManager.processCallEvent(rejectedCall)
 
-        assertTrue("Rejected calls must not auto-create leads", result is CallProcessingResult.UnlinkedIncomingRecorded)
+        assertTrue("Rejected calls must auto-create leads", result is CallProcessingResult.Recorded)
+        val recorded = result as CallProcessingResult.Recorded
+        assertEquals("New", recorded.lead.status)
+        assertEquals("Auto-captured from missed incoming call", recorded.lead.notes)
         val allLeads = (leadRepository.getAllLeads() as AppResult.Success).data
-        assertEquals("No lead should be created for rejected call", 0, allLeads.size)
+        assertEquals("Lead should be created for rejected call", 1, allLeads.size)
     }
 
     @Test
-    fun testAutoLeadCreationEnabled_oemMissedCallWithRingDuration_doesNotCreateLead() = runBlocking {
+    fun testAutoLeadCreationEnabled_oemMissedCallWithRingDuration_createsLead() = runBlocking {
         // Given feature is ON
         autoLeadCaptureConfig.setAutoLeadCreationEnabled(true)
         autoLeadCaptureConfig.setMinDurationSeconds(10)
@@ -495,9 +517,116 @@ class AutoLeadCreationPipelineTest {
 
         val result = callProcessingManager.processCallEvent(missedCall)
 
-        assertTrue("Missed calls must not auto-create leads", result is CallProcessingResult.UnlinkedIncomingRecorded)
+        assertTrue("Missed calls must auto-create leads", result is CallProcessingResult.Recorded)
+        val recorded = result as CallProcessingResult.Recorded
+        assertEquals("New", recorded.lead.status)
+        assertEquals("Auto-captured from missed incoming call", recorded.lead.notes)
         val allLeads = (leadRepository.getAllLeads() as AppResult.Success).data
-        assertEquals("No lead should be created for missed call", 0, allLeads.size)
+        assertEquals("Lead should be created for missed call", 1, allLeads.size)
+    }
+
+    @Test
+    fun testCallWaitingMissedCall_capturedAlongsideActiveCall() = runBlocking {
+        autoLeadCaptureConfig.setAutoLeadCreationEnabled(true)
+
+        // Call 1: Answered incoming call (duration 120s)
+        val call1 = CallEvent(
+            id = "call_evt_active_1",
+            rawNumber = "+919876543211",
+            normalizedNumber = "+919876543211",
+            direction = CallDirection.INCOMING,
+            startTimeEpochMs = 1730350000000L,
+            endTimeEpochMs = 1730350120000L,
+            durationSeconds = 120L
+        )
+
+        // Call 2: Call-waiting missed call during Call 1 (duration 0s)
+        val call2 = CallEvent(
+            id = "call_evt_waiting_2",
+            rawNumber = "+919876543222",
+            normalizedNumber = "+919876543222",
+            direction = CallDirection.MISSED,
+            startTimeEpochMs = 1730350060000L,
+            endTimeEpochMs = 1730350060000L,
+            durationSeconds = 0L
+        )
+
+        // When both calls are processed
+        val res1 = callProcessingManager.processCallEvent(call1)
+        val res2 = callProcessingManager.processCallEvent(call2)
+
+        // Then both are recorded without deduplication dropping Call 2
+        assertTrue("Call 1 recorded", res1 is CallProcessingResult.Recorded)
+        assertTrue("Call 2 recorded", res2 is CallProcessingResult.Recorded)
+
+        val allLeads = (leadRepository.getAllLeads() as AppResult.Success).data
+        assertEquals("Both callers must have leads auto-created", 2, allLeads.size)
+
+        val allCalls = callDao.getRecentCalls(10)
+        assertEquals("Both calls must be persisted in database", 2, allCalls.size)
+    }
+
+    @Test
+    fun testDeferredIdentityRecovery_upgradesToCanonicalAndSyncs() = runBlocking {
+        // TokenProvider without identity
+        val anonymousTokenProvider = InMemoryTokenProvider(
+            accessToken = "token",
+            refreshToken = "refresh",
+            deviceIdOrInstallId = null,
+            agencyAccountId = null
+        )
+        val anonCallProcessingManager = CallProcessingManager(
+            leadRepository = leadRepository,
+            callRepository = callRepository,
+            pendingCallManager = pendingCallManager,
+            normalizer = normalizer,
+            recordingDiscoveryCoordinator = null,
+            tokenProvider = anonymousTokenProvider,
+            autoLeadCaptureConfig = autoLeadCaptureConfig
+        )
+        autoLeadCaptureConfig.setAutoLeadCreationEnabled(true)
+
+        val callEvent = CallEvent(
+            id = "native_call_109",
+            rawNumber = "+919876543299",
+            normalizedNumber = "+919876543299",
+            direction = CallDirection.INCOMING,
+            startTimeEpochMs = 1730350009000L,
+            endTimeEpochMs = 1730350039000L,
+            durationSeconds = 30L
+        )
+
+        val result = anonCallProcessingManager.processCallEvent(callEvent)
+        assertTrue("Call must be recorded", result is CallProcessingResult.Recorded)
+        val recorded = result as CallProcessingResult.Recorded
+        assertEquals("DEFERRED_IDENTITY", recorded.call.syncStatus)
+        assertTrue("ID must be local_pending_call_", recorded.call.clientCallId.startsWith("local_pending_call_"))
+
+        // getPendingSyncCalls must return DEFERRED_IDENTITY calls
+        val pendingList = callDao.getPendingSyncCalls()
+        assertTrue("Pending sync calls must include DEFERRED_IDENTITY call", pendingList.any { it.clientCallId == recorded.call.clientCallId })
+
+        // When identity becomes available
+        val serverResponse = CallReportResponse(
+            success = true,
+            callId = "srv_recovered_1",
+            leadId = "lead_srv_recovered_1",
+            message = "Sync successful"
+        )
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(json.encodeToString(serverResponse))
+        )
+
+        // callRepository with valid identity
+        val syncResult = callRepository.syncPendingCallsToBackend()
+        assertTrue("Sync must succeed", syncResult is AppResult.Success)
+
+        val updatedCall = callDao.getById(recorded.call.id) ?: callDao.getByClientCallId("call_tenant_test_abc_device_test_123_native_call_109")
+        assertNotNull("Call must be found", updatedCall)
+        assertEquals("SYNCED", updatedCall?.syncStatus)
     }
 
     @Test

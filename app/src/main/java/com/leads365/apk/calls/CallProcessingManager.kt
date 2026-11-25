@@ -205,7 +205,7 @@ class CallProcessingManager(
             }
         }
 
-        // Fallback: Automatic Lead Capture for Answered Incoming Calls
+        // Fallback: Automatic Lead Capture for Answered Incoming and Missed/Rejected Calls
         val phoneDigits = normalizer.extractLast10Digits(normalizedNumber).ifEmpty {
             normalizedNumber.replace("[^0-9]".toRegex(), "")
         }
@@ -214,19 +214,21 @@ class CallProcessingManager(
         val isValidCallerNumber = phoneDigits.length >= 7 &&
             !normalizedNumber.contains("unknown", ignoreCase = true) &&
             !normalizedNumber.contains("private", ignoreCase = true)
-        val isIncoming = callEvent.direction == CallDirection.INCOMING ||
-            callEvent.callType == CallLog.Calls.INCOMING_TYPE
-        val isNotMissedOrRejected = callEvent.direction != CallDirection.MISSED &&
-            callEvent.callType != CallLog.Calls.MISSED_TYPE &&
-            callEvent.callType != CallLog.Calls.REJECTED_TYPE
 
-        if (matchingLead == null &&
+        val isMissed = callEvent.direction == CallDirection.MISSED ||
+            callEvent.callType == CallLog.Calls.MISSED_TYPE ||
+            callEvent.callType == CallLog.Calls.REJECTED_TYPE
+        val isIncoming = (callEvent.direction == CallDirection.INCOMING ||
+            callEvent.callType == CallLog.Calls.INCOMING_TYPE) && !isMissed
+
+        val isEligibleForAutoLead = matchingLead == null &&
             isAutoEnabled &&
-            isIncoming &&
-            isNotMissedOrRejected &&
-            callEvent.durationSeconds >= minDuration &&
-            isValidCallerNumber
-        ) {
+            isValidCallerNumber && (
+                (isIncoming && callEvent.durationSeconds >= minDuration) ||
+                isMissed
+            )
+
+        if (isEligibleForAutoLead) {
             // Check Do-Not-Record (DNR) policy before auto-creating lead
             val isDnr = try {
                 val allLeads = (leadRepository.getAllLeads() as? AppResult.Success)?.data.orEmpty()
@@ -238,6 +240,11 @@ class CallProcessingManager(
             if (!isDnr) {
                 val autoLeadId = "lead_auto_${phoneDigits}_${callEvent.startTimeEpochMs}"
                 val provisionalName = "Unknown Caller - $normalizedNumber"
+                val leadNotes = if (isMissed) {
+                    "Auto-captured from missed incoming call"
+                } else {
+                    "Auto-captured from answered incoming call (${callEvent.durationSeconds}s)"
+                }
                 val autoLead = LeadEntity(
                     id = autoLeadId,
                     name = provisionalName,
@@ -245,14 +252,14 @@ class CallProcessingManager(
                     normalizedNumber = normalizedNumber,
                     status = "New",
                     isDoNotRecord = false,
-                    notes = "Auto-captured from answered incoming call (${callEvent.durationSeconds}s)",
+                    notes = leadNotes,
                     createdAtEpochMs = callEvent.startTimeEpochMs,
                     updatedAtEpochMs = now
                 )
                 val saveRes = leadRepository.saveLead(autoLead)
                 if (saveRes is AppResult.Success) {
                     matchingLead = autoLead
-                    Log.i(TAG, "Auto-created provisional Lead for incoming call: id=$autoLeadId, phone=$redactedNumber, duration=${callEvent.durationSeconds}s")
+                    Log.i(TAG, "Auto-created provisional Lead for ${if (isMissed) "missed" else "incoming"} call: id=$autoLeadId, phone=$redactedNumber, duration=${callEvent.durationSeconds}s")
                 } else {
                     Log.w(TAG, "Failed to persist auto-created Lead: $saveRes")
                 }
@@ -262,10 +269,6 @@ class CallProcessingManager(
         }
 
         // 4. Assigned-Lead Gate & Unlinked Incoming Customer Detection
-        val isMissed = callEvent.direction == CallDirection.MISSED ||
-            callEvent.callType == CallLog.Calls.MISSED_TYPE ||
-            callEvent.callType == CallLog.Calls.REJECTED_TYPE
-
         val isUnlinkedInbound = matchingLead == null && (callEvent.direction == CallDirection.INCOMING || isMissed)
 
         if (matchingLead == null && !isUnlinkedInbound) {
@@ -388,6 +391,15 @@ class CallProcessingManager(
         // Emit for Post-Call outcome prompt (if not missed and lead exists)
         if (!isMissed && matchingLead != null) {
             _completedLeadCalls.tryEmit(Pair(finalCallEntity, matchingLead))
+        }
+
+        // Trigger immediate sync to backend for eligible calls
+        if (finalCallEntity.syncStatus == "PENDING") {
+            try {
+                callRepository.reportCallToBackend(finalCallEntity.clientCallId)
+            } catch (syncErr: Exception) {
+                Log.w(TAG, "Immediate backend report for ${finalCallEntity.clientCallId} deferred: ${syncErr.message}")
+            }
         }
 
         return if (matchingLead != null) {

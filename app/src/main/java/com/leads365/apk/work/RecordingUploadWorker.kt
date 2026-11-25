@@ -131,7 +131,20 @@ class RecordingUploadWorker(
                 if (reportResult is AppResult.Failure) {
                     val errorMsg = reportResult.error.message ?: "Failed to report call to backend before recording upload"
                     Log.w(TAG, "Call pre-upload report failed for $targetCallId: $errorMsg")
-                    if (reportResult.error is com.leads365.apk.core.AppError.NetworkError || reportResult.error is com.leads365.apk.core.AppError.AuthError) {
+                    val isTransient = reportResult.error is com.leads365.apk.core.AppError.NetworkError ||
+                            reportResult.error is com.leads365.apk.core.AppError.RateLimitError ||
+                            reportResult.error is com.leads365.apk.core.AppError.AuthError ||
+                            (reportResult.error is com.leads365.apk.core.AppError.NetworkError && (reportResult.error.httpCode ?: 0) >= 500) ||
+                            reportResult.error.cause is java.io.IOException ||
+                            errorMsg.contains("50", ignoreCase = true) ||
+                            errorMsg.contains("502", ignoreCase = true) ||
+                            errorMsg.contains("503", ignoreCase = true) ||
+                            errorMsg.contains("504", ignoreCase = true) ||
+                            errorMsg.contains("timeout", ignoreCase = true) ||
+                            errorMsg.contains("connect", ignoreCase = true) ||
+                            errorMsg.contains("reset", ignoreCase = true)
+
+                    if (isTransient) {
                         uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_RETRY_WAIT, errorMsg)
                         return@withContext Result.retry()
                     } else {
@@ -174,32 +187,49 @@ class RecordingUploadWorker(
                 )
                 uploadQueueRepository.incrementRetry(task.id, result.reason)
                 showNotification(applicationContext, task.fileName, "Upload paused: ${result.reason}")
-                if (runAttemptCount < 3) {
-                    Result.retry()
-                } else {
-                    Result.failure()
-                }
+                Result.retry()
             }
             is UploadExecutionResult.RejectedByServer -> {
                 Log.e(TAG, "Upload rejected by server for task ${task.id}: HTTP ${result.statusCode} - ${result.reason}")
-                val targetState = if (result.reason.contains("DNR", ignoreCase = true)) {
-                    UploadTaskEntity.STATE_SKIPPED_DNR
+                val is5xx = result.statusCode in 500..599
+                if (is5xx) {
+                    Log.w(TAG, "Server error (${result.statusCode}) treated as transient retryable failure")
+                    uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_RETRY_WAIT, result.reason)
+                    uploadQueueRepository.incrementRetry(task.id, result.reason)
+                    Result.retry()
                 } else {
-                    UploadTaskEntity.STATE_REJECTED_BY_SERVER
+                    val targetState = if (result.reason.contains("DNR", ignoreCase = true)) {
+                        UploadTaskEntity.STATE_SKIPPED_DNR
+                    } else {
+                        UploadTaskEntity.STATE_REJECTED_BY_SERVER
+                    }
+                    uploadQueueRepository.updateStatus(task.id, targetState, result.reason)
+                    showNotification(applicationContext, task.fileName, "Upload rejected by server")
+                    Result.failure()
                 }
-                uploadQueueRepository.updateStatus(task.id, targetState, result.reason)
-                showNotification(applicationContext, task.fileName, "Upload rejected by server")
-                Result.failure()
             }
             is UploadExecutionResult.PermanentFailure -> {
                 Log.e(TAG, "Upload permanent failure for task ${task.id}: ${result.reason}")
-                uploadQueueRepository.updateStatus(
-                    task.id,
-                    UploadTaskEntity.STATE_FAILED_PERMANENT,
-                    result.reason
-                )
-                showNotification(applicationContext, task.fileName, "Upload failed permanently")
-                Result.failure()
+                val isTransient = (result.statusCode != null && result.statusCode in 500..599) ||
+                        result.reason.contains("timeout", ignoreCase = true) ||
+                        result.reason.contains("connect", ignoreCase = true) ||
+                        result.reason.contains("reset", ignoreCase = true) ||
+                        result.reason.contains("50", ignoreCase = true)
+
+                if (isTransient) {
+                    Log.w(TAG, "Permanent failure with transient reason (${result.reason}) treated as retryable")
+                    uploadQueueRepository.updateStatus(task.id, UploadTaskEntity.STATE_RETRY_WAIT, result.reason)
+                    uploadQueueRepository.incrementRetry(task.id, result.reason)
+                    Result.retry()
+                } else {
+                    uploadQueueRepository.updateStatus(
+                        task.id,
+                        UploadTaskEntity.STATE_FAILED_PERMANENT,
+                        result.reason
+                    )
+                    showNotification(applicationContext, task.fileName, "Upload failed permanently")
+                    Result.failure()
+                }
             }
         }
     }

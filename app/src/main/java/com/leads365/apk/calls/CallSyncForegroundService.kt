@@ -87,6 +87,16 @@ class CallSyncForegroundService : Service() {
             callStateObserver?.startObserving()
         }
 
+        // Opportunistic background sync of pending calls and uploads on service start
+        serviceScope.launch {
+            try {
+                callRepository.get().syncPendingCallsToBackend()
+                workManagerScheduler.get().resumePendingUploads()
+            } catch (e: Exception) {
+                Log.w(TAG, "Opportunistic sync on service start failed: ${e.message}")
+            }
+        }
+
         isRunning = true
         return START_STICKY
     }

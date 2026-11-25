@@ -89,7 +89,7 @@ class AutoLeadCaptureConfig(
         const val KEY_AUTO_CREATE_LEAD = "key_auto_create_lead_from_incoming_calls"
         const val KEY_MIN_DURATION_SECONDS = "key_auto_create_lead_min_duration_seconds"
 
-        const val DEFAULT_ENABLED = false
+        const val DEFAULT_ENABLED = true
         const val DEFAULT_MIN_DURATION_SECONDS = 10
     }
 }

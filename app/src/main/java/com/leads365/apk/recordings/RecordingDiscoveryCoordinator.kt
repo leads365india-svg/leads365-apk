@@ -14,6 +14,7 @@ import com.leads365.apk.data.repository.UploadQueueRepository
 import com.leads365.apk.database.entity.LeadEntity
 import com.leads365.apk.database.entity.UploadTaskEntity
 import com.leads365.apk.work.RecordingUploadWorker
+import com.leads365.apk.work.WorkManagerScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import java.util.UUID
@@ -57,11 +58,33 @@ class RecordingDiscoveryCoordinator(
     private val uploadQueueRepository: UploadQueueRepository,
     private val normalizer: PhoneNumberNormalizer,
     delayProvider: suspend (Long) -> Unit = { delay(it) },
-    private val context: Context? = null
+    private val context: Context? = null,
+    private val workManagerScheduler: WorkManagerScheduler? = null
 ) {
     var delayProvider: suspend (Long) -> Unit = delayProvider
 
     @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        safRecordingSource: SafRecordingSource,
+        mediaStoreRecordingSource: MediaStoreRecordingSource,
+        matcher: TargetedRecordingMatcher,
+        callRepository: CallRepository,
+        uploadQueueRepository: UploadQueueRepository,
+        normalizer: PhoneNumberNormalizer,
+        workManagerScheduler: WorkManagerScheduler
+    ) : this(
+        safRecordingSource = safRecordingSource,
+        mediaStoreRecordingSource = mediaStoreRecordingSource,
+        matcher = matcher,
+        callRepository = callRepository,
+        uploadQueueRepository = uploadQueueRepository,
+        normalizer = normalizer,
+        delayProvider = { delay(it) },
+        context = context,
+        workManagerScheduler = workManagerScheduler
+    )
+
     constructor(
         @ApplicationContext context: Context,
         safRecordingSource: SafRecordingSource,
@@ -78,7 +101,8 @@ class RecordingDiscoveryCoordinator(
         uploadQueueRepository = uploadQueueRepository,
         normalizer = normalizer,
         delayProvider = { delay(it) },
-        context = context
+        context = context,
+        workManagerScheduler = null
     )
 
     /**
@@ -171,7 +195,14 @@ class RecordingDiscoveryCoordinator(
                 )
                 uploadQueueRepository.enqueueTask(uploadTask)
 
-                if (context != null) {
+                if (workManagerScheduler != null) {
+                    try {
+                        workManagerScheduler.scheduleUploadTask(uploadTask.id, uploadTask.localFileUri, uploadTask.callId)
+                        Log.i(TAG, "Scheduled WorkManager upload task ${uploadTask.id} immediately on recording match")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to schedule WorkManager upload task: ${e.message}")
+                    }
+                } else if (context != null) {
                     try {
                         RecordingUploadWorker.enqueueUniqueUpload(context, uploadTask.id, targetCallId)
                     } catch (e: Exception) {

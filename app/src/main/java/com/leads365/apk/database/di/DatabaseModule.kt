@@ -42,14 +42,18 @@ object DatabaseModule {
             passphrase = passphrase
         )
 
-        val supportFactory = SupportFactory(passphrase)
-
-        return Room.databaseBuilder(
+        val builder = Room.databaseBuilder(
             context,
             Leads365Database::class.java,
             Leads365Database.DATABASE_NAME
         )
-            .openHelperFactory(supportFactory)
+
+        if (DatabaseSecurityMigrator.isNativeSqlcipherAvailable()) {
+            val supportFactory = SupportFactory(passphrase)
+            builder.openHelperFactory(supportFactory)
+        }
+
+        return builder
             .addMigrations(
                 Leads365Database.MIGRATION_1_2,
                 Leads365Database.MIGRATION_2_3,

@@ -7,6 +7,7 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import com.leads365.apk.core.CallEvent
 import com.leads365.apk.data.repository.CallRepository
+import com.leads365.apk.work.WorkManagerScheduler
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -24,6 +25,7 @@ class CallStateReceiver : BroadcastReceiver() {
     interface CallStateReceiverEntryPoint {
         fun callProcessingManager(): CallProcessingManager
         fun callRepository(): CallRepository
+        fun workManagerScheduler(): WorkManagerScheduler
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -101,6 +103,18 @@ class CallStateReceiver : BroadcastReceiver() {
                         }
                     } else {
                         Log.w(TAG, "No completed or missed call found in CallLog within recency window")
+                    }
+
+                    // Always flush and resume pending uploads on IDLE transition
+                    try {
+                        val entryPoint = EntryPointAccessors.fromApplication(
+                            context.applicationContext,
+                            CallStateReceiverEntryPoint::class.java
+                        )
+                        entryPoint.workManagerScheduler().resumePendingUploads()
+                        Log.i(TAG, "Triggered resumePendingUploads in CallStateReceiver")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to resume pending uploads in CallStateReceiver: ${e.message}")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in CallStateReceiver background processing: ${e.message}", e)
