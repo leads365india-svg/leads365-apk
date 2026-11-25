@@ -159,7 +159,7 @@ class RecordingUploadWorker(
                             reportResult.error is com.leads365.apk.core.AppError.AuthError ||
                             (reportResult.error is com.leads365.apk.core.AppError.NetworkError && (reportResult.error.httpCode ?: 0) >= 500) ||
                             reportResult.error.cause is java.io.IOException ||
-                            errorMsg.contains("50", ignoreCase = true) ||
+                            errorMsg.contains("500", ignoreCase = true) ||
                             errorMsg.contains("502", ignoreCase = true) ||
                             errorMsg.contains("503", ignoreCase = true) ||
                             errorMsg.contains("504", ignoreCase = true) ||
@@ -198,23 +198,7 @@ class RecordingUploadWorker(
                         recordingFileSizeBytes = task.fileSizeBytes
                     )
                 }
-                try {
-                    val parsedUri = android.net.Uri.parse(currentTask.localFileUri)
-                    val candidatePath = when {
-                        parsedUri.scheme.equals("file", ignoreCase = true) -> parsedUri.path
-                        parsedUri.scheme.isNullOrBlank() && currentTask.localFileUri.startsWith("/") -> currentTask.localFileUri
-                        else -> null
-                    }
-                    if (!candidatePath.isNullOrBlank()) {
-                        val voipDir = java.io.File(applicationContext.filesDir, "voip_recordings").canonicalFile
-                        val targetFile = java.io.File(candidatePath).canonicalFile
-                        if (targetFile.path.startsWith(voipDir.path + java.io.File.separator) && targetFile.exists()) {
-                            targetFile.delete()
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Non-fatal cleanup error for VoIP recording: ${e.message}")
-                }
+                deleteLocalVoipFileIfManaged(applicationContext, currentTask.localFileUri)
                 showNotification(applicationContext, task.fileName, "Upload complete", isComplete = true)
                 Result.success()
             }
@@ -250,11 +234,7 @@ class RecordingUploadWorker(
             }
             is UploadExecutionResult.PermanentFailure -> {
                 Log.e(TAG, "Upload permanent failure for task ${task.id}: ${result.reason}")
-                val isTransient = (result.statusCode != null && result.statusCode in 500..599) ||
-                        result.reason.contains("timeout", ignoreCase = true) ||
-                        result.reason.contains("connect", ignoreCase = true) ||
-                        result.reason.contains("reset", ignoreCase = true) ||
-                        result.reason.contains("50", ignoreCase = true)
+                val isTransient = isTransientFailure(result.statusCode, result.reason)
 
                 if (isTransient) {
                     Log.w(TAG, "Permanent failure with transient reason (${result.reason}) treated as retryable")
@@ -267,6 +247,9 @@ class RecordingUploadWorker(
                         UploadTaskEntity.STATE_FAILED_PERMANENT,
                         result.reason
                     )
+                    if (result.statusCode == 413) {
+                        deleteLocalVoipFileIfManaged(applicationContext, currentTask.localFileUri)
+                    }
                     showNotification(applicationContext, task.fileName, "Upload failed permanently")
                     Result.failure()
                 }
@@ -347,6 +330,41 @@ class RecordingUploadWorker(
         const val PREF_UPLOAD_WIFI_ONLY = "pref_upload_wifi_only"
         const val NOTIFICATION_CHANNEL_ID = "channel_recording_uploads"
         const val NOTIFICATION_ID = 2001
+
+        internal fun isTransientFailure(statusCode: Int?, reason: String): Boolean {
+            if (statusCode == 413) return false
+            if (statusCode != null && statusCode in 500..599) return true
+            return reason.contains("timeout", ignoreCase = true) ||
+                    reason.contains("connect", ignoreCase = true) ||
+                    reason.contains("reset", ignoreCase = true) ||
+                    reason.contains("500", ignoreCase = true) ||
+                    reason.contains("502", ignoreCase = true) ||
+                    reason.contains("503", ignoreCase = true) ||
+                    reason.contains("504", ignoreCase = true)
+        }
+
+        internal fun deleteLocalVoipFileIfManaged(context: Context, localFileUri: String) {
+            try {
+                val parsedUri = android.net.Uri.parse(localFileUri)
+                val rawPath = when {
+                    parsedUri.scheme.equals("file", ignoreCase = true) ->
+                        parsedUri.path?.takeIf { it.isNotBlank() }
+                            ?: parsedUri.schemeSpecificPart?.removePrefix("//")
+                    parsedUri.scheme.isNullOrBlank() && localFileUri.startsWith("/") -> localFileUri
+                    else -> null
+                }
+                val candidatePath = rawPath?.replaceFirst(Regex("^/([A-Za-z]:)"), "$1")
+                if (!candidatePath.isNullOrBlank()) {
+                    val voipDir = java.io.File(context.filesDir, "voip_recordings").canonicalFile
+                    val targetFile = java.io.File(candidatePath).canonicalFile
+                    if (targetFile.path.startsWith(voipDir.path + java.io.File.separator) && targetFile.exists()) {
+                        targetFile.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Non-fatal cleanup error for VoIP recording: ${e.message}")
+            }
+        }
 
         fun isWifiConnected(context: Context): Boolean {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false

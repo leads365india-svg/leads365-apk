@@ -5,9 +5,11 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
@@ -18,8 +20,11 @@ import com.leads365.apk.data.repository.PolicyRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -53,6 +58,16 @@ class VoipRecordingService : Service() {
     private var sourceApp: String = ""
     private var startTimeMs: Long = 0L
     private var isForegroundActive: Boolean = false
+    @Volatile
+    private var isRecording: Boolean = false
+    private var sawCommunicationMode: Boolean = false
+    private var nonCommChecks: Int = 0
+    private var watchdogJob: Job? = null
+    private val stopLock = Any()
+
+    private val audioManager: AudioManager? by lazy {
+        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -70,7 +85,11 @@ class VoipRecordingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        watchdogJob?.cancel()
+        watchdogJob = null
+        isRecording = false
         isForegroundActive = false
+        isRunning = false
         releaseRecorder()
         serviceScope.cancel()
     }
@@ -78,7 +97,7 @@ class VoipRecordingService : Service() {
     // ── ACTION_START ────────────────────────────────────────────────────────
 
     private fun handleStart(intent: Intent) {
-        if (mediaRecorder != null) {
+        if (mediaRecorder != null || isRecording) {
             Log.w(TAG, "Recording already in progress — ignoring duplicate ACTION_START")
             return
         }
@@ -111,6 +130,7 @@ class VoipRecordingService : Service() {
                 fgType
             )
             isForegroundActive = true
+            isRunning = true
         } catch (se: SecurityException) {
             Log.e(TAG, "startForeground SecurityException — missing FOREGROUND_SERVICE_MICROPHONE?", se)
             stopSelf()
@@ -141,6 +161,7 @@ class VoipRecordingService : Service() {
         try {
             // Try audio sources in preference order: VOICE_COMMUNICATION → VOICE_RECOGNITION → MIC
             var started = false
+            var lastError: Exception? = null
             for (audioSource in listOf(
                 MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                 MediaRecorder.AudioSource.VOICE_RECOGNITION,
@@ -151,8 +172,22 @@ class VoipRecordingService : Service() {
                     recorder.setAudioSource(audioSource)
                     recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                     recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                    recorder.setAudioSamplingRate(44100)
-                    recorder.setAudioEncodingBitRate(96_000)
+                    recorder.setAudioSamplingRate(AUDIO_SAMPLING_RATE)
+                    recorder.setAudioEncodingBitRate(AUDIO_ENCODING_BITRATE)
+                    try {
+                        recorder.setMaxFileSize(MAX_FILE_SIZE_BYTES)
+                    } catch (sizeErr: Exception) {
+                        Log.w(TAG, "setMaxFileSize unsupported on device for source=$audioSource: ${sizeErr.message}")
+                    }
+                    recorder.setOnInfoListener { _, what, _ ->
+                        if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED) {
+                            val elapsedSec = ((System.currentTimeMillis() - startTimeMs) / 1000L)
+                                .toInt()
+                                .coerceAtLeast(1)
+                            Log.w(TAG, "Max VoIP recording size (45 MB) reached; stopping at ${elapsedSec}s")
+                            stopCaptureAndEnqueue(elapsedSec)
+                        }
+                    }
                     recorder.setOutputFile(outFile.absolutePath)
                     recorder.prepare()
                     recorder.start()
@@ -160,14 +195,16 @@ class VoipRecordingService : Service() {
                     Log.i(TAG, "Recording started (source=$audioSource) → ${outFile.name}")
                     break
                 } catch (e: IOException) {
-                    Log.w(TAG, "AudioSource $audioSource failed: ${e.message}")
+                    lastError = e
+                    Log.w(TAG, "AudioSource $audioSource IOException at ${AUDIO_SAMPLING_RATE}Hz/${AUDIO_ENCODING_BITRATE}bps", e)
                 } catch (e: RuntimeException) {
-                    Log.w(TAG, "AudioSource $audioSource RuntimeException: ${e.message}")
+                    lastError = e
+                    Log.w(TAG, "AudioSource $audioSource RuntimeException at ${AUDIO_SAMPLING_RATE}Hz/${AUDIO_ENCODING_BITRATE}bps", e)
                 }
             }
 
             if (!started) {
-                Log.e(TAG, "All audio sources failed — stopping service")
+                Log.e(TAG, "All audio sources failed (VOICE_COMMUNICATION, VOICE_RECOGNITION, MIC)", lastError)
                 recorder.release()
                 outputFile = null
                 runCatching { outFile.delete() }
@@ -176,6 +213,8 @@ class VoipRecordingService : Service() {
             }
 
             mediaRecorder = recorder
+            isRecording = true
+            startAudioModeWatchdog()
         } catch (e: Exception) {
             Log.e(TAG, "Unexpected error starting MediaRecorder", e)
             runCatching { recorder.release() }
@@ -185,22 +224,95 @@ class VoipRecordingService : Service() {
         }
     }
 
-    // ── ACTION_STOP ─────────────────────────────────────────────────────────
+    // ── AudioMode Watchdog ──────────────────────────────────────────────────
+
+    private fun startAudioModeWatchdog() {
+        watchdogJob?.cancel()
+        sawCommunicationMode = false
+        nonCommChecks = 0
+
+        val am = audioManager ?: return
+        val currentStartTime = startTimeMs
+
+        watchdogJob = serviceScope.launch {
+            while (isActive && isRecording) {
+                delay(WATCHDOG_POLL_INTERVAL_MS)
+                if (!isRecording) break
+
+                val mode = try {
+                    am.mode
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed reading AudioManager.mode: ${e.message}")
+                    AudioManager.MODE_NORMAL
+                }
+                val elapsedSec = ((System.currentTimeMillis() - currentStartTime) / 1000L)
+                    .toInt()
+                    .coerceAtLeast(0)
+
+                val transition = evaluateWatchdogSample(
+                    audioMode = mode,
+                    sawCommunicationMode = sawCommunicationMode,
+                    nonCommChecks = nonCommChecks,
+                    elapsedSec = elapsedSec
+                )
+                sawCommunicationMode = transition.sawCommunicationMode
+                nonCommChecks = transition.nonCommChecks
+
+                if (transition.shouldStop) {
+                    val reason = if (elapsedSec >= MAX_RECORDING_DURATION_SEC) {
+                        "safety ceiling (${MAX_RECORDING_DURATION_SEC}s) reached"
+                    } else {
+                        "VoIP audio mode ended (mode=$mode)"
+                    }
+                    Log.i(TAG, "$reason; auto-stopping recording at ${elapsedSec}s")
+                    stopCaptureAndEnqueue(elapsedSec.coerceAtLeast(1))
+                    break
+                }
+            }
+        }
+    }
+
+    // ── ACTION_STOP & Capture Stop ──────────────────────────────────────────
 
     private fun handleStop(intent: Intent) {
         val durationSec = intent.getIntExtra(EXTRA_DURATION_SEC, 0)
-        val capturedFile = outputFile
-        val capturedCaller = callerIdentifier
-        val capturedSourceApp = sourceApp
-        val capturedStartTime = startTimeMs
+        stopCaptureAndEnqueue(durationSec)
+    }
 
-        // Clear references and stop MediaRecorder synchronously before launching IO work
-        outputFile = null
-        releaseRecorder()
+    private fun stopCaptureAndEnqueue(durationSec: Int) {
+        val capturedFile: File?
+        val capturedCaller: String
+        val capturedSourceApp: String
+        val capturedStartTime: Long
 
-        if (!isForegroundActive && capturedFile == null) {
-            stopSelf()
-            return
+        synchronized(stopLock) {
+            watchdogJob?.cancel()
+            watchdogJob = null
+
+            if (!isRecording && outputFile == null) {
+                if (!isForegroundActive) {
+                    isRunning = false
+                    stopSelf()
+                }
+                return
+            }
+
+            isRecording = false
+            isRunning = false
+            capturedFile = outputFile
+            capturedCaller = callerIdentifier
+            capturedSourceApp = sourceApp
+            capturedStartTime = startTimeMs
+            outputFile = null
+            releaseRecorder()
+        }
+
+        val resolvedDurationSec = if (durationSec > 0) {
+            durationSec
+        } else if (capturedStartTime > 0L) {
+            ((System.currentTimeMillis() - capturedStartTime) / 1000L).toInt().coerceAtLeast(1)
+        } else {
+            1
         }
 
         // Enqueue in IO coroutine; stop foreground AFTER enqueue completes
@@ -212,7 +324,7 @@ class VoipRecordingService : Service() {
                         sourceApp        = capturedSourceApp,
                         file             = capturedFile,
                         startTimeMs      = capturedStartTime,
-                        durationSec      = durationSec
+                        durationSec      = resolvedDurationSec
                     )
                 }
             } catch (e: Exception) {
@@ -228,6 +340,7 @@ class VoipRecordingService : Service() {
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private fun stopForegroundAndStopSelf() {
+        isRunning = false
         if (isForegroundActive) {
             isForegroundActive = false
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -283,7 +396,59 @@ class VoipRecordingService : Service() {
         const val EXTRA_SOURCE_APP    = "extra_source_app"
         const val EXTRA_START_TIME    = "extra_start_time_ms"
         const val EXTRA_DURATION_SEC  = "extra_duration_sec"
-        const val CHANNEL_ID          = "leads365_voip_capture"
-        const val NOTIFICATION_ID     = 9002
+        const val CHANNEL_ID              = "leads365_voip_capture"
+        const val NOTIFICATION_ID         = 9002
+        const val WATCHDOG_POLL_INTERVAL_MS = 2_000L
+        const val WATCHDOG_REQUIRED_NON_COMM_CHECKS = 2
+        const val AUDIO_SAMPLING_RATE     = 44_100
+        const val AUDIO_ENCODING_BITRATE  = 64_000
+        const val MAX_FILE_SIZE_BYTES     = 45L * 1024L * 1024L
+        const val MAX_RECORDING_DURATION_SEC = 45 * 60
+
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
+        internal data class WatchdogTransition(
+            val sawCommunicationMode: Boolean,
+            val nonCommChecks: Int,
+            val shouldStop: Boolean
+        )
+
+        internal fun evaluateWatchdogSample(
+            audioMode: Int,
+            sawCommunicationMode: Boolean,
+            nonCommChecks: Int,
+            elapsedSec: Int
+        ): WatchdogTransition {
+            if (elapsedSec >= MAX_RECORDING_DURATION_SEC) {
+                return WatchdogTransition(
+                    sawCommunicationMode = sawCommunicationMode,
+                    nonCommChecks = nonCommChecks,
+                    shouldStop = true
+                )
+            }
+            return if (audioMode == AudioManager.MODE_IN_COMMUNICATION || audioMode == AudioManager.MODE_IN_CALL) {
+                WatchdogTransition(
+                    sawCommunicationMode = true,
+                    nonCommChecks = 0,
+                    shouldStop = false
+                )
+            } else if (sawCommunicationMode) {
+                val updatedChecks = nonCommChecks + 1
+                WatchdogTransition(
+                    sawCommunicationMode = true,
+                    nonCommChecks = updatedChecks,
+                    shouldStop = updatedChecks >= WATCHDOG_REQUIRED_NON_COMM_CHECKS
+                )
+            } else {
+                // OEM does not expose MODE_IN_COMMUNICATION; do not stop via AudioManager alone
+                WatchdogTransition(
+                    sawCommunicationMode = false,
+                    nonCommChecks = 0,
+                    shouldStop = false
+                )
+            }
+        }
     }
 }

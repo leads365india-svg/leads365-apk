@@ -1,6 +1,7 @@
 package com.leads365.apk.recordings
 
 import android.content.Context
+import android.media.AudioManager
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -26,6 +27,7 @@ import com.leads365.apk.network.models.CallReportRequest
 import com.leads365.apk.network.models.CallReportResponse
 import com.leads365.apk.network.models.PolicyData
 import com.leads365.apk.ui.MainUiState
+import com.leads365.apk.work.RecordingUploadWorker
 import com.leads365.apk.work.WorkManagerScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -283,6 +285,122 @@ class WhatsAppVoipPipelineTest {
             "canContinueToStep2 must stay true when mandatory cellular permissions are granted and WhatsApp permissions are NOT_GRANTED",
             state.canContinueToStep2
         )
+    }
+
+    @Test
+    fun `VoipRecordingService watchdog auto-stops only after sawCommunicationMode and enforces 44_1kHz 64kbps config`() {
+        assertEquals(44_100, VoipRecordingService.AUDIO_SAMPLING_RATE)
+        assertEquals(64_000, VoipRecordingService.AUDIO_ENCODING_BITRATE)
+        assertEquals(45L * 1024L * 1024L, VoipRecordingService.MAX_FILE_SIZE_BYTES)
+        assertEquals(45 * 60, VoipRecordingService.MAX_RECORDING_DURATION_SEC)
+
+        // When OEM hides MODE_IN_COMMUNICATION (sawCommunicationMode == false), watchdog must NOT auto-stop even after 6s/60s
+        for (sec in listOf(2, 6, 8, 60)) {
+            val res = VoipRecordingService.evaluateWatchdogSample(
+                audioMode = AudioManager.MODE_NORMAL,
+                sawCommunicationMode = false,
+                nonCommChecks = 0,
+                elapsedSec = sec
+            )
+            assertFalse("Must not stop at ${sec}s when sawCommunicationMode == false", res.shouldStop)
+            assertEquals(0, res.nonCommChecks)
+        }
+
+        // Active WhatsApp call sets MODE_IN_COMMUNICATION -> sawCommunicationMode = true
+        val activeComm = VoipRecordingService.evaluateWatchdogSample(
+            audioMode = AudioManager.MODE_IN_COMMUNICATION,
+            sawCommunicationMode = false,
+            nonCommChecks = 0,
+            elapsedSec = 4
+        )
+        assertTrue(activeComm.sawCommunicationMode)
+        assertEquals(0, activeComm.nonCommChecks)
+        assertFalse(activeComm.shouldStop)
+
+        // Transient 1-poll drop (2s) must not stop immediately
+        val firstDrop = VoipRecordingService.evaluateWatchdogSample(
+            audioMode = AudioManager.MODE_NORMAL,
+            sawCommunicationMode = activeComm.sawCommunicationMode,
+            nonCommChecks = activeComm.nonCommChecks,
+            elapsedSec = 16
+        )
+        assertEquals(1, firstDrop.nonCommChecks)
+        assertFalse(firstDrop.shouldStop)
+
+        // Audio bouncing back to MODE_IN_COMMUNICATION resets nonCommChecks to 0
+        val recovered = VoipRecordingService.evaluateWatchdogSample(
+            audioMode = AudioManager.MODE_IN_COMMUNICATION,
+            sawCommunicationMode = firstDrop.sawCommunicationMode,
+            nonCommChecks = firstDrop.nonCommChecks,
+            elapsedSec = 18
+        )
+        assertEquals(0, recovered.nonCommChecks)
+        assertFalse(recovered.shouldStop)
+
+        // Two consecutive MODE_NORMAL polls (4s) after sawCommunicationMode == true must auto-stop
+        val stopCheck1 = VoipRecordingService.evaluateWatchdogSample(
+            audioMode = AudioManager.MODE_NORMAL,
+            sawCommunicationMode = recovered.sawCommunicationMode,
+            nonCommChecks = recovered.nonCommChecks,
+            elapsedSec = 20
+        )
+        val stopCheck2 = VoipRecordingService.evaluateWatchdogSample(
+            audioMode = AudioManager.MODE_NORMAL,
+            sawCommunicationMode = stopCheck1.sawCommunicationMode,
+            nonCommChecks = stopCheck1.nonCommChecks,
+            elapsedSec = 22
+        )
+        assertFalse(stopCheck1.shouldStop)
+        assertTrue("Second consecutive MODE_NORMAL check must auto-stop capture", stopCheck2.shouldStop)
+
+        // Hard 45-minute safety duration ceiling stops capture even if sawCommunicationMode == false
+        val maxDurationStop = VoipRecordingService.evaluateWatchdogSample(
+            audioMode = AudioManager.MODE_NORMAL,
+            sawCommunicationMode = false,
+            nonCommChecks = 0,
+            elapsedSec = VoipRecordingService.MAX_RECORDING_DURATION_SEC
+        )
+        assertTrue("45-minute hard safety ceiling must auto-stop capture", maxDurationStop.shouldStop)
+    }
+
+    @Test
+    fun `RecordingUploadWorker treats 413 50MB limit as permanent failure and cleans up managed VoIP file`() {
+        // Must NEVER match "50" inside "50MB limit" as transient HTTP 50x
+        assertFalse(
+            "413 50MB limit must never be retried as transient",
+            RecordingUploadWorker.isTransientFailure(
+                statusCode = 413,
+                reason = "File size (53300000 bytes) exceeds maximum permitted 50MB limit"
+            )
+        )
+        assertFalse(
+            "413 must always be permanent regardless of message text",
+            RecordingUploadWorker.isTransientFailure(statusCode = 413, reason = "HTTP 500 text")
+        )
+        assertFalse(
+            "50MB string without status code must never trigger retry",
+            RecordingUploadWorker.isTransientFailure(statusCode = null, reason = "File exceeds 50MB limit")
+        )
+
+        // Explicit 5xx / network errors remain transient
+        assertTrue(RecordingUploadWorker.isTransientFailure(500, "Internal Server Error"))
+        assertTrue(RecordingUploadWorker.isTransientFailure(502, "Bad Gateway"))
+        assertTrue(RecordingUploadWorker.isTransientFailure(503, "Service Unavailable"))
+        assertTrue(RecordingUploadWorker.isTransientFailure(504, "Gateway Timeout"))
+        assertTrue(RecordingUploadWorker.isTransientFailure(null, "Read timeout"))
+
+        // Managed oversized file inside filesDir/voip_recordings is deleted; external files are untouched
+        val managedOversized = File(voipDir, "WA_oversized.m4a").apply { writeBytes(ByteArray(32)) }
+        val externalFile = File(context.cacheDir, "external_keep.m4a").apply { writeBytes(ByteArray(32)) }
+        try {
+            RecordingUploadWorker.deleteLocalVoipFileIfManaged(context, Uri.fromFile(managedOversized).toString())
+            RecordingUploadWorker.deleteLocalVoipFileIfManaged(context, Uri.fromFile(externalFile).toString())
+
+            assertFalse("Managed VoIP file must be deleted on 413 cleanup", managedOversized.exists())
+            assertTrue("External file outside voip_recordings must never be deleted", externalFile.exists())
+        } finally {
+            externalFile.delete()
+        }
     }
 
     private data class ScheduledUpload(

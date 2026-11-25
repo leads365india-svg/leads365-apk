@@ -492,6 +492,7 @@ class CallRepositoryImpl(
                         callOutcome = serverOutcome ?: existing.callOutcome,
                         notes = dto.notes ?: existing.notes,
                         hasRecording = hasRec || existing.hasRecording,
+                        recordingOrigin = if (dto.source == "whatsapp_voip") "whatsapp_voip" else existing.recordingOrigin,
                         syncStatus = "SYNCED",
                         tenantId = existing.tenantId ?: effectiveTenantId,
                         workspaceId = existing.workspaceId ?: effectiveWorkspaceId
@@ -514,6 +515,7 @@ class CallRepositoryImpl(
                             callOutcome = serverOutcome ?: candidate.callOutcome,
                             notes = dto.notes ?: candidate.notes,
                             hasRecording = hasRec || candidate.hasRecording,
+                            recordingOrigin = if (dto.source == "whatsapp_voip") "whatsapp_voip" else candidate.recordingOrigin,
                             syncStatus = "SYNCED",
                             tenantId = candidate.tenantId ?: effectiveTenantId,
                             workspaceId = candidate.workspaceId ?: effectiveWorkspaceId

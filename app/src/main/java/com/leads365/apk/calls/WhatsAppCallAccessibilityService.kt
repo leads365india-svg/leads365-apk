@@ -3,11 +3,14 @@ package com.leads365.apk.calls
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -34,15 +37,26 @@ import com.leads365.apk.recordings.VoipRecordingService
 class WhatsAppCallAccessibilityService : AccessibilityService() {
 
     // ── Call state ──────────────────────────────────────────────────────────
-    private var isCallActive       = false
-    private var isRecordingStarted = false
-    private var callStartTimeMs    = 0L
-    private var currentCaller      = ""
-    private var currentSourceApp   = ""
+    private var isCallActive            = false
+    private var isRecordingStarted      = false
+    private var serviceConfirmedRunning = false
+    private var activePackage: String?  = null
+    private var callStartTimeMs         = 0L
+    private var currentCaller           = ""
+    private var currentSourceApp        = ""
+    private var heartbeatNoCallUiChecks = 0
 
-    // ── Debounce handler (3 s) ──────────────────────────────────────────────
+    private val audioManager: AudioManager? by lazy {
+        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+    private val powerManager: PowerManager? by lazy {
+        getSystemService(Context.POWER_SERVICE) as? PowerManager
+    }
+
+    // ── Debounce & heartbeat handler ────────────────────────────────────────
     private val stopHandler              = Handler(Looper.getMainLooper())
     private var pendingStopRunnable: Runnable? = null
+    private var heartbeatRunnable: Runnable?   = null
 
     // ── AccessibilityService callbacks ──────────────────────────────────────
 
@@ -60,6 +74,16 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg !in TARGET_PACKAGES) return
 
+        // Reset stale state immediately if VoipRecordingService already auto-stopped via watchdog
+        if (isCallActive) {
+            if (VoipRecordingService.isRunning) {
+                serviceConfirmedRunning = true
+            } else if (serviceConfirmedRunning || System.currentTimeMillis() - callStartTimeMs >= SERVICE_STARTUP_GRACE_MS) {
+                Log.i(TAG, "VoipRecordingService stopped externally — resetting active VoIP call state")
+                resetCallState()
+            }
+        }
+
         val root = try { rootInActiveWindow } catch (_: Exception) { null } ?: return
 
         try {
@@ -75,11 +99,13 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         Log.w(TAG, "Accessibility service interrupted")
         cancelPendingStop()
+        stopHeartbeat()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         cancelPendingStop()
+        stopHeartbeat()
         // If the service is killed while recording, stop VoipRecordingService cleanly
         if (isCallActive) {
             sendStopIntent(durationSec = elapsedCallSeconds())
@@ -96,19 +122,30 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
         when {
             // ── Call just started (timer appeared for the first time) ───────
             !isCallActive && hasCallTimer -> {
-                isCallActive     = true
-                callStartTimeMs  = System.currentTimeMillis()
-                currentSourceApp = pkg
-                currentCaller    = callerText ?: "WhatsApp Contact"
+                isCallActive            = true
+                serviceConfirmedRunning = false
+                heartbeatNoCallUiChecks = 0
+                activePackage           = pkg
+                callStartTimeMs         = System.currentTimeMillis()
+                currentSourceApp        = pkg
+                currentCaller           = callerText ?: "WhatsApp Contact"
                 cancelPendingStop()
                 Log.i(TAG, "VoIP call detected: caller='$currentCaller' pkg=$pkg")
                 isRecordingStarted = sendStartIntent()
+                if (isRecordingStarted) {
+                    startHeartbeat()
+                } else {
+                    isCallActive = false
+                    activePackage = null
+                }
             }
 
             // ── Call is active; keep updating caller if it resolves later ───
             isCallActive && (hasEndCallBtn || hasCallTimer) -> {
                 // In-call controls still visible → call ongoing → cancel any pending stop debounce
                 cancelPendingStop()
+                heartbeatNoCallUiChecks = 0
+                activePackage = pkg
                 if (!callerText.isNullOrBlank()) currentCaller = callerText
             }
 
@@ -145,9 +182,8 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
 
     private fun sendStopIntent(durationSec: Int) {
         val wasRecording = isRecordingStarted
-        isCallActive = false
-        isRecordingStarted = false
-        if (!wasRecording) return
+        resetCallState()
+        if (!wasRecording || !VoipRecordingService.isRunning) return
 
         val intent = Intent(this, VoipRecordingService::class.java).apply {
             action = VoipRecordingService.ACTION_STOP
@@ -157,10 +193,131 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             putExtra(VoipRecordingService.EXTRA_DURATION_SEC, durationSec)
         }
         try {
-            startForegroundService(intent)
+            startService(intent)
+        } catch (e: IllegalStateException) {
+            if (VoipRecordingService.isRunning) {
+                try {
+                    startForegroundService(intent)
+                } catch (fgErr: Exception) {
+                    Log.e(TAG, "Failed to stop VoipRecordingService via foreground fallback", fgErr)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop VoipRecordingService", e)
         }
+    }
+
+    private fun resetCallState() {
+        cancelPendingStop()
+        stopHeartbeat()
+        isCallActive = false
+        isRecordingStarted = false
+        serviceConfirmedRunning = false
+        heartbeatNoCallUiChecks = 0
+        activePackage = null
+    }
+
+    // ── Heartbeat (2 s) for screen-lock / app-exit safety ───────────────────
+
+    private fun startHeartbeat() {
+        stopHeartbeat()
+        val runnable = object : Runnable {
+            override fun run() {
+                if (!isCallActive) {
+                    heartbeatRunnable = null
+                    return
+                }
+
+                if (VoipRecordingService.isRunning) {
+                    serviceConfirmedRunning = true
+                } else if (serviceConfirmedRunning || System.currentTimeMillis() - callStartTimeMs >= SERVICE_STARTUP_GRACE_MS) {
+                    Log.i(TAG, "Heartbeat: VoipRecordingService no longer running — resetting call state")
+                    resetCallState()
+                    return
+                }
+
+                val isScreenOn = try {
+                    powerManager?.isInteractive ?: true
+                } catch (_: Exception) {
+                    true
+                }
+
+                if (!isScreenOn) {
+                    // Screen is OFF (likely held to ear): never stop based on missing UI nodes
+                    heartbeatNoCallUiChecks = 0
+                } else {
+                    val mode = try {
+                        audioManager?.mode ?: AudioManager.MODE_NORMAL
+                    } catch (_: Exception) {
+                        AudioManager.MODE_NORMAL
+                    }
+                    val isInComm = mode == AudioManager.MODE_IN_COMMUNICATION || mode == AudioManager.MODE_IN_CALL
+                    val hasCallUi = hasActiveWhatsAppCallUi()
+
+                    if (!isInComm && !hasCallUi) {
+                        heartbeatNoCallUiChecks++
+                        if (heartbeatNoCallUiChecks >= HEARTBEAT_REQUIRED_NO_UI_CHECKS) {
+                            Log.i(
+                                TAG,
+                                "Heartbeat: screen ON, audio mode=$mode, and no WhatsApp call UI for $heartbeatNoCallUiChecks checks — stopping recording"
+                            )
+                            sendStopIntent(durationSec = elapsedCallSeconds())
+                            return
+                        }
+                    } else {
+                        heartbeatNoCallUiChecks = 0
+                    }
+                }
+
+                if (isCallActive) {
+                    stopHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+                }
+            }
+        }
+        heartbeatRunnable = runnable
+        stopHandler.postDelayed(runnable, HEARTBEAT_INTERVAL_MS)
+    }
+
+    private fun hasActiveWhatsAppCallUi(): Boolean {
+        val checkedRoots = mutableListOf<Pair<AccessibilityNodeInfo, Boolean>>()
+        try {
+            rootInActiveWindow?.let { checkedRoots.add(it to true) }
+            try {
+                windows?.forEach { win ->
+                    win?.root?.let { root ->
+                        val pkg = root.packageName?.toString()
+                        if (pkg == null || pkg in TARGET_PACKAGES) {
+                            checkedRoots.add(root to true)
+                        } else {
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                @Suppress("DEPRECATION")
+                                root.recycle()
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            return checkedRoots.any { (node, _) ->
+                val pkg = node.packageName?.toString()
+                (pkg == null || pkg in TARGET_PACKAGES) &&
+                        (findEndCallButton(node) != null || findCallTimerText(node) != null)
+            }
+        } catch (_: Exception) {
+            return false
+        } finally {
+            checkedRoots.forEach { (node, shouldRecycle) ->
+                if (shouldRecycle && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    @Suppress("DEPRECATION")
+                    node.recycle()
+                }
+            }
+        }
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatRunnable?.let { stopHandler.removeCallbacks(it) }
+        heartbeatRunnable = null
     }
 
     // ── Debounce ─────────────────────────────────────────────────────────────
@@ -272,6 +429,15 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
 
         /** Wait 3 seconds after end-call button disappears before treating the call as ended. */
         private const val STOP_DEBOUNCE_MS = 3_000L
+
+        /** Poll interval while active call is tracked so screen-lock / app-exit stops capture promptly. */
+        private const val HEARTBEAT_INTERVAL_MS = 2_000L
+
+        /** Grace period for VoipRecordingService.onStartCommand() to flip isRunning = true. */
+        private const val SERVICE_STARTUP_GRACE_MS = 2_500L
+
+        /** Consecutive 2s checks with screen ON, non-comm audio, and no call UI before stopping (6s). */
+        private const val HEARTBEAT_REQUIRED_NO_UI_CHECKS = 3
 
         /** Matches call timer strings like "0:42", "1:05", "12:34", "1:23:45". */
         private val TIMER_REGEX = Regex("""^\d{1,2}:\d{2}(:\d{2})?$""")
