@@ -1,9 +1,11 @@
 package com.leads365.apk.ui.calls
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.leads365.apk.core.RecordingCandidate
@@ -250,9 +252,25 @@ class CallsViewModel @Inject constructor(
     fun playRecording(uriString: String?): Boolean {
         if (uriString.isNullOrBlank()) return false
         return try {
-            val uri = Uri.parse(uriString)
+            val rawUri = Uri.parse(uriString)
+            val playUri = if (rawUri.scheme.equals("file", ignoreCase = true) || uriString.startsWith("/")) {
+                val decodedPath = rawUri.path?.takeIf { it.isNotBlank() }
+                    ?: rawUri.schemeSpecificPart?.removePrefix("//")
+                    ?: uriString.removePrefix("file://")
+                val resolvedPath = decodedPath.replaceFirst(Regex("^/([A-Za-z]:)"), "$1")
+                val file = java.io.File(resolvedPath)
+                if (!file.exists()) {
+                    android.widget.Toast.makeText(context, "Audio file not found on device.", android.widget.Toast.LENGTH_SHORT).show()
+                    Log.w("CallsViewModel", "Playback aborted: local audio file does not exist ($resolvedPath)")
+                    return false
+                }
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            } else {
+                rawUri
+            }
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "audio/*")
+                setDataAndType(playUri, "audio/*")
+                clipData = ClipData.newRawUri("", playUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

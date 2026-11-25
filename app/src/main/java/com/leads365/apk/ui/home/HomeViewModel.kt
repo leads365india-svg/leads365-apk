@@ -3,6 +3,7 @@ package com.leads365.apk.ui.home
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.leads365.apk.core.AppResult
 import com.leads365.apk.data.repository.AuthRepository
 import com.leads365.apk.data.repository.AuthState
 import com.leads365.apk.data.repository.CallRepository
@@ -59,7 +60,7 @@ class HomeViewModel @Inject constructor(
     private val _discoveredRecordingsCount = MutableStateFlow(0)
     val discoveredRecordingsCount: StateFlow<Int> = _discoveredRecordingsCount.asStateFlow()
 
-    private val _lastSyncTimestamp = MutableStateFlow(leadRepository.getLastSyncTimestamp())
+    private val _lastSyncTimestamp = MutableStateFlow(leadRepository.getLastLocalSyncTimestamp())
     val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
 
     private val _isSyncStale = MutableStateFlow(false)
@@ -76,7 +77,7 @@ class HomeViewModel @Inject constructor(
 
     fun refreshReadiness(dispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO) {
         _isRecordingAccessAvailable.value = safRecordingSource.isAccessible() || mediaStoreRecordingSource.isAccessible()
-        val lastSync = leadRepository.getLastSyncTimestamp()
+        val lastSync = leadRepository.getLastLocalSyncTimestamp()
         _lastSyncTimestamp.value = lastSync
         val staleThresholdMs = 4 * 60 * 60 * 1000L // 4 hours
         _isSyncStale.value = authRepository.isLoggedIn() && (lastSync > 0L && (System.currentTimeMillis() - lastSync) > staleThresholdMs)
@@ -99,10 +100,14 @@ class HomeViewModel @Inject constructor(
             _isSyncing.value = true
             try {
                 if (authRepository.isLoggedIn()) {
-                    leadRepository.syncLeads()
-                    val newSync = leadRepository.getLastSyncTimestamp()
+                    val syncResult = leadRepository.syncLeads()
+                    val newSync = leadRepository.getLastLocalSyncTimestamp()
                     _lastSyncTimestamp.value = newSync
-                    _isSyncStale.value = false
+                    _isSyncStale.value = if (syncResult is AppResult.Success) {
+                        false
+                    } else {
+                        newSync > 0L && (System.currentTimeMillis() - newSync) > 4 * 60 * 60 * 1000L
+                    }
                     workManagerScheduler.triggerOneTimeHeartbeat()
                 }
             } catch (e: Exception) {

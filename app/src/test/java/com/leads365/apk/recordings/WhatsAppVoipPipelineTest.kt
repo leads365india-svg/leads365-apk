@@ -3,12 +3,14 @@ package com.leads365.apk.recordings
 import android.content.Context
 import android.media.AudioManager
 import android.net.Uri
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.leads365.apk.calls.CallLogDiagnosticResult
+import com.leads365.apk.calls.WhatsAppCallAccessibilityService
 import com.leads365.apk.core.AppResult
 import com.leads365.apk.core.PermissionStatus
 import com.leads365.apk.core.PhoneNumberNormalizer
@@ -182,6 +184,8 @@ class WhatsAppVoipPipelineTest {
         assertEquals("tenant_wa_01", savedCall.tenantId)
         assertEquals("ws_wa_lead", savedCall.workspaceId)
         assertEquals("lead_wa_1", savedCall.leadId)
+        assertEquals("+919876543210", savedCall.normalizedNumber)
+        assertEquals("Rohan Sharma", savedCall.rawNumber)
         assertTrue(savedCall.hasRecording)
 
         val savedTask = database.uploadTaskDao().getByCallId(expectedCallId)
@@ -293,6 +297,19 @@ class WhatsAppVoipPipelineTest {
         assertEquals(64_000, VoipRecordingService.AUDIO_ENCODING_BITRATE)
         assertEquals(45L * 1024L * 1024L, VoipRecordingService.MAX_FILE_SIZE_BYTES)
         assertEquals(45 * 60, VoipRecordingService.MAX_RECORDING_DURATION_SEC)
+        assertEquals(1_500L, VoipRecordingService.SILENCE_CHECK_DELAY_MS)
+        assertEquals(
+            listOf(
+                android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                android.media.MediaRecorder.AudioSource.MIC,
+                android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            ),
+            VoipRecordingService.AUDIO_SOURCE_PRIORITY
+        )
+        assertEquals(1, VoipRecordingService.nextFallbackSourceIndex(currentIndex = 0, maxAmplitude = 0))
+        assertEquals(2, VoipRecordingService.nextFallbackSourceIndex(currentIndex = 1, maxAmplitude = 0))
+        assertNull(VoipRecordingService.nextFallbackSourceIndex(currentIndex = 2, maxAmplitude = 0))
+        assertNull(VoipRecordingService.nextFallbackSourceIndex(currentIndex = 0, maxAmplitude = 512))
 
         // When OEM hides MODE_IN_COMMUNICATION (sawCommunicationMode == false), watchdog must NOT auto-stop even after 6s/60s
         for (sec in listOf(2, 6, 8, 60)) {
@@ -400,6 +417,79 @@ class WhatsAppVoipPipelineTest {
             assertTrue("External file outside voip_recordings must never be deleted", externalFile.exists())
         } finally {
             externalFile.delete()
+        }
+    }
+
+    @Test
+    fun `WhatsAppCallAccessibilityService detects w4b variant end-call and in-call controls while rejecting chat rows`() {
+        // Variant viewIds and clickable-parent exact "End" labels match
+        assertTrue(
+            WhatsAppCallAccessibilityService.matchesEndCallNode(
+                viewId = "com.whatsapp.w4b:id/voip_hangup_action",
+                text = null,
+                contentDesc = null,
+                isNodeOrParentClickable = false
+            )
+        )
+        assertTrue(
+            WhatsAppCallAccessibilityService.matchesEndCallNode(
+                viewId = null,
+                text = "End",
+                contentDesc = null,
+                isNodeOrParentClickable = true
+            )
+        )
+        assertFalse(
+            "Exact 'End' inside non-clickable node must not match",
+            WhatsAppCallAccessibilityService.matchesEndCallNode(
+                viewId = null,
+                text = "End",
+                contentDesc = null,
+                isNodeOrParentClickable = false
+            )
+        )
+
+        // In-call controls (mute, speaker, bluetooth, audio_route, call_controls, voip_call) match
+        assertTrue(
+            WhatsAppCallAccessibilityService.matchesInCallControlMarker(
+                viewId = "com.whatsapp.w4b:id/footer_speaker_toggle",
+                contentDesc = "Speaker",
+                isNodeOrParentClickable = true
+            )
+        )
+        assertTrue(
+            WhatsAppCallAccessibilityService.matchesInCallControlMarker(
+                viewId = "com.whatsapp.w4b:id/call_controls_container",
+                contentDesc = null,
+                isNodeOrParentClickable = false
+            )
+        )
+        assertFalse(
+            "Chat list muted indicator must not trigger in-call detection",
+            WhatsAppCallAccessibilityService.matchesInCallControlMarker(
+                viewId = "com.whatsapp.w4b:id/conversations_row_mute_indicator",
+                contentDesc = "Muted",
+                isNodeOrParentClickable = false
+            )
+        )
+
+        // AccessibilityNodeInfo tree check with Speaker button even without standard end_call_btn ID
+        val callControlNode = AccessibilityNodeInfo.obtain().apply {
+            viewIdResourceName = "com.whatsapp.w4b:id/audio_route_button"
+            contentDescription = "Bluetooth"
+            isClickable = true
+        }
+        val chatTimestampNode = AccessibilityNodeInfo.obtain().apply {
+            text = "17:21"
+            isClickable = false
+        }
+        try {
+            assertTrue(WhatsAppCallAccessibilityService.hasInCallControlsInTree(callControlNode))
+            assertNull(WhatsAppCallAccessibilityService.findEndCallButtonInTree(chatTimestampNode))
+            assertFalse(WhatsAppCallAccessibilityService.hasInCallControlsInTree(chatTimestampNode))
+        } finally {
+            callControlNode.recycle()
+            chatTimestampNode.recycle()
         }
     }
 

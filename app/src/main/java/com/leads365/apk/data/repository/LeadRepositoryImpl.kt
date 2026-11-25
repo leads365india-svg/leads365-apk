@@ -161,11 +161,8 @@ class LeadRepositoryImpl(
         val prefs = context.getSharedPreferences(PREFS_LEAD_SYNC, Context.MODE_PRIVATE)
         val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
         val activeWorkspaceId = tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
-        val watermarkKey = if (activeTenantId != null) {
-            "${KEY_LAST_SYNC_EPOCH_MS}_${activeTenantId}_${activeWorkspaceId ?: "all"}"
-        } else {
-            KEY_LAST_SYNC_EPOCH_MS
-        }
+        val watermarkKey = syncKeyFor(KEY_LAST_SYNC_EPOCH_MS, activeTenantId, activeWorkspaceId)
+        val localSyncKey = syncKeyFor(KEY_LAST_SYNC_LOCAL_EPOCH_MS, activeTenantId, activeWorkspaceId)
         val lastSyncTimestamp = if (forceFullSync) null else {
             val ts = prefs.getLong(watermarkKey, 0L)
             if (ts > 0L) ts else null
@@ -241,7 +238,11 @@ class LeadRepositoryImpl(
             }
 
             val syncTime = response.serverTime
-            prefs.edit().putLong(watermarkKey, syncTime).apply()
+            val localSyncTime = System.currentTimeMillis()
+            prefs.edit()
+                .putLong(watermarkKey, syncTime)
+                .putLong(localSyncKey, localSyncTime)
+                .apply()
 
             AppResult.Success(
                 LeadSyncResult(
@@ -295,13 +296,34 @@ class LeadRepositoryImpl(
         }
     }
 
-    override fun getLastSyncTimestamp(): Long {
-        return context.getSharedPreferences(PREFS_LEAD_SYNC, Context.MODE_PRIVATE)
-            .getLong(KEY_LAST_SYNC_EPOCH_MS, 0L)
+    override fun getLastSyncTimestamp(): Long = readScopedSyncPref(KEY_LAST_SYNC_EPOCH_MS)
+
+    override fun getLastLocalSyncTimestamp(): Long {
+        val localTs = readScopedSyncPref(KEY_LAST_SYNC_LOCAL_EPOCH_MS)
+        return if (localTs > 0L) localTs else getLastSyncTimestamp()
+    }
+
+    private fun readScopedSyncPref(prefix: String): Long {
+        val prefs = context.getSharedPreferences(PREFS_LEAD_SYNC, Context.MODE_PRIVATE)
+        val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+        val activeWorkspaceId = tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
+        val scopedKey = syncKeyFor(prefix, activeTenantId, activeWorkspaceId)
+        val scopedValue = prefs.getLong(scopedKey, 0L)
+        if (scopedValue > 0L) return scopedValue
+        return if (activeTenantId == null) prefs.getLong(prefix, 0L) else 0L
+    }
+
+    private fun syncKeyFor(prefix: String, tenantId: String?, workspaceId: String?): String {
+        return if (tenantId != null) {
+            "${prefix}_${tenantId}_${workspaceId ?: "all"}"
+        } else {
+            prefix
+        }
     }
 
     companion object {
         private const val PREFS_LEAD_SYNC = "leads365_lead_sync_prefs"
         private const val KEY_LAST_SYNC_EPOCH_MS = "key_last_sync_epoch_ms"
+        private const val KEY_LAST_SYNC_LOCAL_EPOCH_MS = "key_last_sync_local_epoch_ms"
     }
 }

@@ -23,4 +23,5 @@ interface LeadRepository {
     suspend fun clearAllLeads(): AppResult<Unit>
     suspend fun syncLeads(forceFullSync: Boolean = false): AppResult<LeadSyncResult>
     fun getLastSyncTimestamp(): Long
+    fun getLastLocalSyncTimestamp(): Long = getLastSyncTimestamp()
 }

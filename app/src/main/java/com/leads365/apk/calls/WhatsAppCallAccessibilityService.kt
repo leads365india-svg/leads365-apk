@@ -84,15 +84,47 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             }
         }
 
-        val root = try { rootInActiveWindow } catch (_: Exception) { null } ?: return
+        val activeRoot = try { rootInActiveWindow } catch (_: Exception) { null }
+        val rootsToRecycle = mutableListOf<AccessibilityNodeInfo>()
+        if (activeRoot != null) rootsToRecycle.add(activeRoot)
 
         try {
-            processWindowState(root, pkg)
-        } finally {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                @Suppress("DEPRECATION")
-                root.recycle()
+            val activePkg = activeRoot?.packageName?.toString()
+            val activeMatchesPackage = activeRoot != null && (activePkg == null || activePkg in TARGET_PACKAGES)
+            if (activeMatchesPackage &&
+                hasInCallControls(activeRoot!!) &&
+                (isCallActive || findCallTimerText(activeRoot) != null)
+            ) {
+                processWindowState(activeRoot, activePkg ?: pkg)
+                return
             }
+
+            // Active window did not show complete call UI (or belonged to another window): inspect all WhatsApp windows
+            val windowCandidates = collectTargetWindowRoots(rootsToRecycle)
+
+            val controlCandidate =
+                windowCandidates.firstOrNull { (node, _) ->
+                    findCallTimerText(node) != null && hasInCallControls(node)
+                } ?: windowCandidates.firstOrNull { (node, _) ->
+                    hasInCallControls(node)
+                }
+
+            when {
+                controlCandidate != null -> {
+                    processWindowState(controlCandidate.first, controlCandidate.second)
+                }
+                activeMatchesPackage -> {
+                    processWindowState(activeRoot!!, activePkg ?: pkg)
+                }
+                windowCandidates.isNotEmpty() -> {
+                    processWindowState(windowCandidates.first().first, windowCandidates.first().second)
+                }
+                isCallActive -> {
+                    schedulePendingStop()
+                }
+            }
+        } finally {
+            rootsToRecycle.forEach { safeRecycle(it) }
         }
     }
 
@@ -115,13 +147,14 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
     // ── Core detection logic ────────────────────────────────────────────────
 
     private fun processWindowState(root: AccessibilityNodeInfo, pkg: String) {
-        val hasCallTimer   = findCallTimerText(root) != null
-        val hasEndCallBtn  = findEndCallButton(root) != null
-        val callerText     = extractCallerIdentifier(root)
+        val hasCallTimer      = findCallTimerText(root) != null
+        val hasEndCallBtn     = findEndCallButton(root) != null
+        val hasInCallControls = hasEndCallBtn || hasVoipControlMarker(root)
+        val callerText        = extractCallerIdentifier(root)
 
         when {
-            // ── Call just started (timer appeared for the first time) ───────
-            !isCallActive && hasCallTimer -> {
+            // ── Call just started (timer + end-call or active in-call controls visible — never trigger on 24h chat timestamps) ──
+            !isCallActive && hasCallTimer && hasInCallControls -> {
                 isCallActive            = true
                 serviceConfirmedRunning = false
                 heartbeatNoCallUiChecks = 0
@@ -140,18 +173,25 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // ── Call is active; keep updating caller if it resolves later ───
-            isCallActive && (hasEndCallBtn || hasCallTimer) -> {
-                // In-call controls still visible → call ongoing → cancel any pending stop debounce
+            // ── Call is active; stay active while end-call button or in-call controls are visible ──
+            isCallActive && hasInCallControls -> {
                 cancelPendingStop()
                 heartbeatNoCallUiChecks = 0
                 activePackage = pkg
                 if (!callerText.isNullOrBlank()) currentCaller = callerText
             }
 
-            // ── Call may have ended (controls gone while call was active) ───
-            isCallActive && !hasCallTimer && !hasEndCallBtn -> {
+            // ── Call may have ended (both end-call button and in-call controls gone while call was active) ──
+            isCallActive && !hasInCallControls -> {
                 schedulePendingStop()
+            }
+
+            // ── Diagnostic log when timer-like text is visible without recognized call controls ──
+            !isCallActive && hasCallTimer && !hasInCallControls -> {
+                Log.d(
+                    TAG,
+                    "Timer seen without controls (pkg=$pkg); clickable nodes: ${summarizeClickableNodes(root)}"
+                )
             }
         }
     }
@@ -278,40 +318,54 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
         stopHandler.postDelayed(runnable, HEARTBEAT_INTERVAL_MS)
     }
 
-    private fun hasActiveWhatsAppCallUi(): Boolean {
-        val checkedRoots = mutableListOf<Pair<AccessibilityNodeInfo, Boolean>>()
+    private fun collectTargetWindowRoots(
+        rootsToRecycle: MutableList<AccessibilityNodeInfo>
+    ): List<Pair<AccessibilityNodeInfo, String>> {
+        val result = mutableListOf<Pair<AccessibilityNodeInfo, String>>()
         try {
-            rootInActiveWindow?.let { checkedRoots.add(it to true) }
-            try {
-                windows?.forEach { win ->
-                    win?.root?.let { root ->
-                        val pkg = root.packageName?.toString()
-                        if (pkg == null || pkg in TARGET_PACKAGES) {
-                            checkedRoots.add(root to true)
-                        } else {
-                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                                @Suppress("DEPRECATION")
-                                root.recycle()
-                            }
-                        }
-                    }
+            windows?.forEach { win ->
+                val winRoot = win?.root ?: return@forEach
+                val winPkg = winRoot.packageName?.toString()
+                if (winPkg != null && winPkg in TARGET_PACKAGES) {
+                    rootsToRecycle.add(winRoot)
+                    result.add(winRoot to winPkg)
+                } else {
+                    safeRecycle(winRoot)
                 }
-            } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+        return result
+    }
 
-            return checkedRoots.any { (node, _) ->
-                val pkg = node.packageName?.toString()
-                (pkg == null || pkg in TARGET_PACKAGES) &&
-                        (findEndCallButton(node) != null || findCallTimerText(node) != null)
+    private fun hasActiveWhatsAppCallUi(): Boolean {
+        val checkedRoots = mutableListOf<AccessibilityNodeInfo>()
+        try {
+            rootInActiveWindow?.let { root ->
+                val pkg = root.packageName?.toString()
+                if (pkg == null || pkg in TARGET_PACKAGES) {
+                    checkedRoots.add(root)
+                } else {
+                    safeRecycle(root)
+                }
+            }
+            collectTargetWindowRoots(checkedRoots)
+
+            return checkedRoots.any { node ->
+                findEndCallButton(node) != null || hasInCallControls(node)
             }
         } catch (_: Exception) {
             return false
         } finally {
-            checkedRoots.forEach { (node, shouldRecycle) ->
-                if (shouldRecycle && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    @Suppress("DEPRECATION")
-                    node.recycle()
-                }
-            }
+            checkedRoots.forEach { safeRecycle(it) }
+        }
+    }
+
+    private fun safeRecycle(node: AccessibilityNodeInfo?) {
+        if (node != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            @Suppress("DEPRECATION")
+            try {
+                node.recycle()
+            } catch (_: Exception) {}
         }
     }
 
@@ -348,21 +402,18 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
     /**
      * Finds the in-call end-call / hang-up button by resource-id or text/contentDescription.
      */
-    private fun findEndCallButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        // Resource-id based (most reliable)
-        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val nodes = root.findAccessibilityNodeInfosByViewId("$pkg:id/end_call_btn")
-            if (nodes.isNotEmpty()) return nodes[0]
-        }
-        // Text / contentDescription fallback (BFS)
-        return bfsFind(root) { node ->
-            val text = node.text?.toString() ?: ""
-            val desc = node.contentDescription?.toString() ?: ""
-            (text.equals("End call", ignoreCase = true) || text.equals("Hang up", ignoreCase = true)
-                    || desc.equals("End call", ignoreCase = true) || desc.equals("Hang up", ignoreCase = true))
-                    && node.isClickable
-        }
-    }
+    private fun findEndCallButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        findEndCallButtonInTree(root)
+
+    /**
+     * Returns true when active VoIP call controls (end-call, mute, speaker, bluetooth,
+     * audio route, or call control container) are present in [root].
+     */
+    private fun hasInCallControls(root: AccessibilityNodeInfo): Boolean =
+        hasInCallControlsInTree(root)
+
+    private fun hasVoipControlMarker(root: AccessibilityNodeInfo): Boolean =
+        hasVoipControlMarkerInTree(root)
 
     /**
      * Finds the call timer text node matching HH:MM or HH:MM:SS.
@@ -385,11 +436,12 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             "com.whatsapp.w4b:id/call_screen_title",
             "com.whatsapp.w4b:id/name"
         )
-        for (hint in idHints) {
-            val nodes = root.findAccessibilityNodeInfosByViewId(hint)
-            val text  = nodes.firstOrNull()?.text?.toString()
-            if (!text.isNullOrBlank()) return text
+        val hintedName = idHints.firstNotNullOfOrNull { hint ->
+            bfsFind(root) { node ->
+                node.viewIdResourceName == hint && !node.text.isNullOrBlank()
+            }?.text?.toString()
         }
+        if (hintedName != null) return hintedName
         // Fallback: first visible, non-empty TextView that isn't a status/encryption label
         return bfsFind(root) { node ->
             val text = node.text?.toString() ?: ""
@@ -401,22 +453,25 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * BFS traversal returning the first node matching [predicate], or null.
+     * Collects up to [limit] clickable node IDs/descriptions/texts for diagnostic logging.
      */
-    private fun bfsFind(
-        root: AccessibilityNodeInfo,
-        predicate: (AccessibilityNodeInfo) -> Boolean
-    ): AccessibilityNodeInfo? {
+    private fun summarizeClickableNodes(root: AccessibilityNodeInfo, limit: Int = 8): String {
+        val items = mutableListOf<String>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
-        while (queue.isNotEmpty()) {
+        while (queue.isNotEmpty() && items.size < limit) {
             val node = queue.removeFirst()
-            if (predicate(node)) return node
+            if (node.isClickable) {
+                val resId = node.viewIdResourceName ?: "-"
+                val desc = node.contentDescription?.toString()?.take(40) ?: "-"
+                val text = node.text?.toString()?.take(30) ?: "-"
+                items.add("[id=$resId desc='$desc' text='$text']")
+            }
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.add(it) }
             }
         }
-        return null
+        return if (items.isEmpty()) "none" else items.joinToString(", ")
     }
 
     // ── Constants ────────────────────────────────────────────────────────────
@@ -447,5 +502,110 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             "Calling", "Ringing", "Connecting", "Reconnecting",
             "End-to-end encrypted", "encrypted", "WhatsApp call"
         )
+
+        /** View-ID substrings matching end-call controls across WhatsApp / WhatsApp Business variants. */
+        private val END_CALL_VIEW_ID_TOKENS = listOf(
+            "end_call", "call_end", "hangup", "hang_up", "disconnect"
+        )
+
+        /** Clickable end-call button labels across WhatsApp / WhatsApp Business builds. */
+        private val END_CALL_LABELS = listOf(
+            "end call", "hang up", "leave call", "disconnect"
+        )
+
+        /** Active VoIP call-control markers (outside chat screens). */
+        private val IN_CALL_CONTROL_TOKENS = listOf(
+            "speaker", "bluetooth", "audio_route", "call_controls", "voip_call"
+        )
+
+        internal fun findEndCallButtonInTree(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+            bfsFindWithParentClickable(root) { node, parentClickable ->
+                matchesEndCallNode(
+                    viewId = node.viewIdResourceName,
+                    text = node.text,
+                    contentDesc = node.contentDescription,
+                    isNodeOrParentClickable = node.isClickable || parentClickable
+                )
+            }
+
+        internal fun hasInCallControlsInTree(root: AccessibilityNodeInfo): Boolean =
+            findEndCallButtonInTree(root) != null || hasVoipControlMarkerInTree(root)
+
+        internal fun hasVoipControlMarkerInTree(root: AccessibilityNodeInfo): Boolean =
+            bfsFindWithParentClickable(root) { node, parentClickable ->
+                matchesInCallControlMarker(
+                    viewId = node.viewIdResourceName,
+                    contentDesc = node.contentDescription,
+                    isNodeOrParentClickable = node.isClickable || parentClickable
+                )
+            } != null
+
+        internal fun matchesEndCallNode(
+            viewId: String?,
+            text: CharSequence?,
+            contentDesc: CharSequence?,
+            isNodeOrParentClickable: Boolean
+        ): Boolean {
+            val normalizedId = viewId?.lowercase() ?: ""
+            if (END_CALL_VIEW_ID_TOKENS.any { normalizedId.contains(it) }) return true
+            if (!isNodeOrParentClickable) return false
+            return matchesEndCallLabel(text) || matchesEndCallLabel(contentDesc)
+        }
+
+        internal fun matchesEndCallLabel(raw: CharSequence?): Boolean {
+            val value = raw?.toString()?.trim()?.lowercase() ?: return false
+            if (value.isEmpty()) return false
+            return value == "end" || END_CALL_LABELS.any { value.contains(it) }
+        }
+
+        internal fun matchesInCallControlMarker(
+            viewId: String?,
+            contentDesc: CharSequence?,
+            isNodeOrParentClickable: Boolean
+        ): Boolean {
+            val normalizedId = viewId?.lowercase() ?: ""
+            val normalizedDesc = contentDesc?.toString()?.trim()?.lowercase() ?: ""
+
+            if (IN_CALL_CONTROL_TOKENS.any { normalizedId.contains(it) || normalizedDesc.contains(it) }) {
+                return true
+            }
+
+            // Handle "mute" while ignoring chat-list muted-conversation status icons
+            val idHasMute = normalizedId.contains("mute") &&
+                !normalizedId.contains("indicator") &&
+                !normalizedId.contains("row_mute") &&
+                !normalizedId.contains("chat_mute") &&
+                !normalizedId.contains("status_mute")
+            if (idHasMute) return true
+
+            val descHasMute = normalizedDesc.contains("mute") &&
+                !normalizedDesc.contains("muted chat") &&
+                !normalizedDesc.contains("notifications muted") &&
+                (normalizedDesc != "muted" || isNodeOrParentClickable)
+            return descHasMute
+        }
+
+        private fun bfsFind(
+            root: AccessibilityNodeInfo,
+            predicate: (AccessibilityNodeInfo) -> Boolean
+        ): AccessibilityNodeInfo? =
+            bfsFindWithParentClickable(root) { node, _ -> predicate(node) }
+
+        private fun bfsFindWithParentClickable(
+            root: AccessibilityNodeInfo,
+            predicate: (node: AccessibilityNodeInfo, parentClickable: Boolean) -> Boolean
+        ): AccessibilityNodeInfo? {
+            val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Boolean>>()
+            queue.add(root to false)
+            while (queue.isNotEmpty()) {
+                val (node, parentClickable) = queue.removeFirst()
+                if (predicate(node, parentClickable)) return node
+                val nodeClickable = node.isClickable
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it to nodeClickable) }
+                }
+            }
+            return null
+        }
     }
 }

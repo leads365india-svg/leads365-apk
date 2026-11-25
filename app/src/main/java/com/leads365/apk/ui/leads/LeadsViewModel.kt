@@ -58,7 +58,7 @@ class LeadsViewModel @Inject constructor(
     ) : this(leadRepository, workManagerScheduler, null, null, null, null, null, null)
 
     private val _uiState = MutableStateFlow(
-        LeadsUiState(lastSyncTimeEpochMs = leadRepository.getLastSyncTimestamp())
+        LeadsUiState(lastSyncTimeEpochMs = leadRepository.getLastLocalSyncTimestamp())
     )
     val uiState: StateFlow<LeadsUiState> = _uiState.asStateFlow()
 

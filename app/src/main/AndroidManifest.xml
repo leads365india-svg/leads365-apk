@@ -120,11 +120,21 @@
                 android:resource="@xml/whatsapp_accessibility_config" />
         </service>
 
-        <!-- Phase 3: Opt-in Foreground Service for WhatsApp VoIP Audio Capture -->
+        <!-- Opt-in Foreground Service for WhatsApp VoIP Audio Capture -->
         <service
             android:name=".recordings.VoipRecordingService"
             android:foregroundServiceType="microphone"
             android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 

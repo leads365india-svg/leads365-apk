@@ -476,4 +476,28 @@ class LeadSyncAndRepositoryTest {
         viewModel.selectLeadForDetail(null)
         assertNull(viewModel.uiState.value.selectedLeadForDetail)
     }
+
+    @Test
+    fun `getLastLocalSyncTimestamp records local device clock independently of stale serverTime`() = runBlocking {
+        val staleServerTime = System.currentTimeMillis() - 8L * 60L * 60L * 1000L
+        val responseObj = LeadSyncResponse(
+            success = true,
+            serverTime = staleServerTime,
+            data = LeadSyncData()
+        )
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(json.encodeToString(responseObj)))
+
+        val beforeSync = System.currentTimeMillis()
+        val result = leadRepository.syncLeads(forceFullSync = false)
+        val afterSync = System.currentTimeMillis()
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(staleServerTime, leadRepository.getLastSyncTimestamp())
+
+        val localSyncTime = leadRepository.getLastLocalSyncTimestamp()
+        assertTrue(
+            "Local sync timestamp ($localSyncTime) should reflect device clock [$beforeSync..$afterSync]",
+            localSyncTime in beforeSync..afterSync
+        )
+    }
 }

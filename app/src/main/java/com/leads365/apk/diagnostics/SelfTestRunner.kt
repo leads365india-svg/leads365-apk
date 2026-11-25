@@ -307,7 +307,7 @@ open class SelfTestRunner @Inject constructor(
     }
 
     private suspend fun checkLeadSynchronization(): DiagnosticItem {
-        val lastSyncTimestamp = leadRepository.getLastSyncTimestamp()
+        val lastSyncTimestamp = leadRepository.getLastLocalSyncTimestamp()
         val leadsCountResult = leadRepository.getAllLeads()
         val localLeadsCount = if (leadsCountResult is AppResult.Success) leadsCountResult.data.size else 0
         val staleThresholdMs = 4 * 60 * 60 * 1000L // 4 hours

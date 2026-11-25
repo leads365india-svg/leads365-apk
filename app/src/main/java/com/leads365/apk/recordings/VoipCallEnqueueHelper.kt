@@ -102,6 +102,9 @@ class VoipCallEnqueueHelper @Inject constructor(
             // Name-based lookup first
             matchedLead = tenantLeads
                 .firstOrNull { it.name.equals(trimmedCaller, ignoreCase = true) }
+            if (matchedLead != null && resolvedPhone == null && matchedLead.normalizedNumber.isNotBlank()) {
+                resolvedPhone = matchedLead.normalizedNumber
+            }
 
             // Contacts fallback
             if (matchedLead == null &&
