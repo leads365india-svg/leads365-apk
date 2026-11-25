@@ -7,6 +7,7 @@ import com.leads365.apk.core.AppResult
 import com.leads365.apk.database.dao.CallDao
 import com.leads365.apk.database.entity.CallEntity
 import com.leads365.apk.database.entity.LeadEntity
+import com.leads365.apk.network.auth.TokenProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +23,8 @@ import javax.inject.Singleton
 class CloudTelephonyManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val apiService: CloudTelephonyApiService,
-    private val callDao: CallDao
+    private val callDao: CallDao,
+    private val tokenProvider: TokenProvider? = null
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -125,7 +127,9 @@ class CloudTelephonyManager @Inject constructor(
                     leadId = lead.id,
                     simId = "cloud_telephony",
                     syncStatus = "SYNCED",
-                    hasRecording = false // Set to true only when recording is server-confirmed ready
+                    hasRecording = false, // Set to true only when recording is server-confirmed ready
+                    workspaceId = lead.workspaceId ?: tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null },
+                    tenantId = lead.tenantId ?: tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
                 )
 
                 callDao.insert(callEntity)

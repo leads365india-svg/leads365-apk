@@ -186,7 +186,9 @@ class AuthViewModel @Inject constructor(
             authRepository.logout(preservePendingUploads = preservePendingUploads)
             try {
                 leadRepository.get().clearAllLeads()
-                callRepository.get().clearAll()
+                if (!preservePendingUploads) {
+                    callRepository.get().clearAll()
+                }
             } catch (e: Exception) {
                 // Non-fatal
             }

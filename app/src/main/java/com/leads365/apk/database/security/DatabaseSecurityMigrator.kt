@@ -148,7 +148,10 @@ object DatabaseSecurityMigrator {
                     Leads365Database.MIGRATION_1_2,
                     Leads365Database.MIGRATION_2_3,
                     Leads365Database.MIGRATION_3_4,
-                    Leads365Database.MIGRATION_4_5
+                    Leads365Database.MIGRATION_4_5,
+                    Leads365Database.MIGRATION_5_6,
+                    Leads365Database.MIGRATION_6_7,
+                    Leads365Database.MIGRATION_7_8
                 )
                 .allowMainThreadQueries()
 
@@ -265,6 +268,8 @@ object DatabaseSecurityMigrator {
             val notesIdx = cursor.getColumnIndex("notes")
             val dnrIdx = cursor.getColumnIndex("isDoNotRecord")
             val updatedIdx = cursor.getColumnIndex("updatedAtEpochMs")
+            val wsIdx = cursor.getColumnIndex("workspaceId")
+            val tenantIdx = cursor.getColumnIndex("tenantId")
 
             while (cursor.moveToNext()) {
                 list.add(
@@ -278,7 +283,9 @@ object DatabaseSecurityMigrator {
                         assignedAgentId = if (assignedIdx != -1 && !cursor.isNull(assignedIdx)) cursor.getString(assignedIdx) else null,
                         notes = if (notesIdx != -1 && !cursor.isNull(notesIdx)) cursor.getString(notesIdx) else "",
                         isDoNotRecord = if (dnrIdx != -1) cursor.getInt(dnrIdx) == 1 else false,
-                        updatedAtEpochMs = if (updatedIdx != -1 && !cursor.isNull(updatedIdx)) cursor.getLong(updatedIdx) else System.currentTimeMillis()
+                        updatedAtEpochMs = if (updatedIdx != -1 && !cursor.isNull(updatedIdx)) cursor.getLong(updatedIdx) else System.currentTimeMillis(),
+                        workspaceId = if (wsIdx != -1 && !cursor.isNull(wsIdx)) cursor.getString(wsIdx) else null,
+                        tenantId = if (tenantIdx != -1 && !cursor.isNull(tenantIdx)) cursor.getString(tenantIdx) else null
                     )
                 )
             }
@@ -311,6 +318,8 @@ object DatabaseSecurityMigrator {
             val recNameIdx = cursor.getColumnIndex("recordingFileName")
             val recSizeIdx = cursor.getColumnIndex("recordingFileSizeBytes")
             val createdIdx = cursor.getColumnIndex("createdAtEpochMs")
+            val wsIdx = cursor.getColumnIndex("workspaceId")
+            val tenantIdx = cursor.getColumnIndex("tenantId")
 
             while (cursor.moveToNext()) {
                 val id = cursor.getString(idIdx) ?: ""
@@ -335,7 +344,9 @@ object DatabaseSecurityMigrator {
                         recordingUri = if (recUriIdx != -1 && !cursor.isNull(recUriIdx)) cursor.getString(recUriIdx) else null,
                         recordingFileName = if (recNameIdx != -1 && !cursor.isNull(recNameIdx)) cursor.getString(recNameIdx) else null,
                         recordingFileSizeBytes = if (recSizeIdx != -1 && !cursor.isNull(recSizeIdx)) cursor.getLong(recSizeIdx) else null,
-                        createdAtEpochMs = if (createdIdx != -1 && !cursor.isNull(createdIdx)) cursor.getLong(createdIdx) else System.currentTimeMillis()
+                        createdAtEpochMs = if (createdIdx != -1 && !cursor.isNull(createdIdx)) cursor.getLong(createdIdx) else System.currentTimeMillis(),
+                        workspaceId = if (wsIdx != -1 && !cursor.isNull(wsIdx)) cursor.getString(wsIdx) else null,
+                        tenantId = if (tenantIdx != -1 && !cursor.isNull(tenantIdx)) cursor.getString(tenantIdx) else null
                     )
                 )
             }
@@ -361,6 +372,8 @@ object DatabaseSecurityMigrator {
             val errIdx = cursor.getColumnIndex("lastError")
             val createdIdx = cursor.getColumnIndex("createdAtEpochMs")
             val updatedIdx = cursor.getColumnIndex("updatedAtEpochMs")
+            val tenantIdx = cursor.getColumnIndex("tenantId")
+            val wsIdx = cursor.getColumnIndex("workspaceId")
 
             while (cursor.moveToNext()) {
                 list.add(
@@ -377,7 +390,9 @@ object DatabaseSecurityMigrator {
                         maxRetries = if (maxRetryIdx != -1) cursor.getInt(maxRetryIdx) else 3,
                         lastError = if (errIdx != -1 && !cursor.isNull(errIdx)) cursor.getString(errIdx) else null,
                         createdAtEpochMs = cursor.getLong(createdIdx),
-                        updatedAtEpochMs = cursor.getLong(updatedIdx)
+                        updatedAtEpochMs = cursor.getLong(updatedIdx),
+                        tenantId = if (tenantIdx != -1 && !cursor.isNull(tenantIdx)) cursor.getString(tenantIdx) else null,
+                        workspaceId = if (wsIdx != -1 && !cursor.isNull(wsIdx)) cursor.getString(wsIdx) else null
                     )
                 )
             }

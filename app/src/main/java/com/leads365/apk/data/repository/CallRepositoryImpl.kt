@@ -215,19 +215,60 @@ class CallRepositoryImpl(
         }
 
         var call = initialCall
-        if (call.syncStatus == "DEFERRED_IDENTITY" || call.clientCallId.startsWith("local_pending_call_")) {
-            val tenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
-            val installId = tokenProvider?.getDeviceIdOrInstallId()?.trim()?.ifEmpty { null }
-            if (tenantId.isNullOrBlank() || installId.isNullOrBlank()) {
-                Log.w(TAG, "Call sync safely deferred for ${call.id}: tenant or device identity not available")
+        val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+        val callTenantId = call.tenantId?.trim()?.ifEmpty { null }
+
+        // Quarantine if call is already marked quarantined or has missing/mismatched tenant identity when a session is active
+        if (call.syncStatus == CallEntity.SYNC_STATUS_QUARANTINED) {
+            if (activeTenantId != null && callTenantId == activeTenantId) {
+                // Legitimate owner re-logged in; continue recovery
+            } else {
+                return@withContext AppResult.Failure(
+                    AppError.AuthError("Call $callId is quarantined for tenant '${callTenantId ?: "unbound"}' and cannot be uploaded under '${activeTenantId ?: "unauthenticated"}'")
+                )
+            }
+        }
+
+        if (activeTenantId != null) {
+            val prefixTenantMismatch = call.clientCallId.startsWith("call_") &&
+                !call.clientCallId.startsWith("call_${activeTenantId}_")
+            if (callTenantId.isNullOrBlank() || callTenantId != activeTenantId || prefixTenantMismatch) {
+                val quarantineMsg = "Cross-tenant quarantine: callTenant='${callTenantId ?: "unbound"}', sessionTenant='$activeTenantId'"
+                Log.w(TAG, "$quarantineMsg (callId=${call.id}). Preserving local audio/metadata without attribution.")
+                callDao.updateSyncStatus(call.id, CallEntity.SYNC_STATUS_QUARANTINED, quarantineMsg)
+                uploadTaskDao?.let { dao ->
+                    val t1 = dao.getByCallId(call.id)
+                    val t2 = if (call.clientCallId != call.id) dao.getByCallId(call.clientCallId) else null
+                    listOfNotNull(t1, t2).distinctBy { it.id }.forEach { t ->
+                        dao.updateStatus(t.id, UploadTaskEntity.STATE_TENANT_MISMATCH, System.currentTimeMillis(), quarantineMsg)
+                    }
+                }
+                return@withContext AppResult.Failure(AppError.AuthError(quarantineMsg))
+            }
+        } else if (tokenProvider != null) {
+            Log.w(TAG, "Call sync safely deferred for ${call.id}: active tenant session is not available")
+            if (call.syncStatus != "DEFERRED_IDENTITY") {
                 callDao.updateSyncStatus(call.id, "DEFERRED_IDENTITY", "Awaiting tenant/device identity")
-                return@withContext AppResult.Failure(AppError.AuthError("Synchronization deferred: tenant or device identity not available"))
+            }
+            return@withContext AppResult.Failure(AppError.AuthError("Synchronization deferred: active tenant identity not available"))
+        }
+
+        if (call.syncStatus == "DEFERRED_IDENTITY" || call.clientCallId.startsWith("local_pending_call_")) {
+            // Strictly require immutable tenantId == activeTenantId; NEVER dynamically claim an unbound or foreign call!
+            val boundTenantId = callTenantId ?: return@withContext AppResult.Failure(
+                AppError.AuthError("Cannot upgrade DEFERRED_IDENTITY call without bound tenantId")
+            )
+            val installId = tokenProvider?.getDeviceIdOrInstallId()?.trim()?.ifEmpty { null }
+            if (activeTenantId == null || activeTenantId != boundTenantId || installId.isNullOrBlank()) {
+                Log.w(TAG, "Call sync safely deferred for ${call.id}: matching tenant or device identity not available")
+                callDao.updateSyncStatus(call.id, "DEFERRED_IDENTITY", "Awaiting tenant/device identity")
+                return@withContext AppResult.Failure(AppError.AuthError("Synchronization deferred: matching tenant or device identity not available"))
             }
 
-            // Identity is now available: upgrade to canonical clientCallId
+            // Same-tenant identity verified: upgrade to canonical clientCallId
             val suffix = call.clientCallId.removePrefix("local_pending_call_")
-            val canonicalClientCallId = "call_${tenantId}_${installId}_$suffix"
-            val upgraded = call.copy(clientCallId = canonicalClientCallId, syncStatus = "PENDING")
+            val canonicalClientCallId = "call_${boundTenantId}_${installId}_$suffix"
+            val upgraded = call.copy(clientCallId = canonicalClientCallId, syncStatus = "PENDING", tenantId = boundTenantId)
             callDao.update(upgraded)
             call = upgraded
         }
@@ -290,7 +331,11 @@ class CallRepositoryImpl(
                         if (leadDao != null) {
                             val provisional = if (!oldLeadId.isNullOrBlank() && oldLeadId != "unlinked") leadDao.getById(oldLeadId) else null
                             if (provisional != null && !oldLeadId.isNullOrBlank()) {
-                                val canonicalLead = provisional.copy(id = serverLeadId)
+                                val canonicalLead = provisional.copy(
+                                    id = serverLeadId,
+                                    tenantId = provisional.tenantId ?: activeTenantId,
+                                    workspaceId = provisional.workspaceId ?: call.workspaceId ?: tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
+                                )
                                 leadDao.insert(canonicalLead)
                                 leadDao.deleteById(oldLeadId)
                             } else {
@@ -303,7 +348,9 @@ class CallRepositoryImpl(
                                     isDoNotRecord = false,
                                     notes = call.notes ?: "Auto-captured from answered incoming call",
                                     createdAtEpochMs = call.startTimeEpochMs,
-                                    updatedAtEpochMs = System.currentTimeMillis()
+                                    updatedAtEpochMs = System.currentTimeMillis(),
+                                    workspaceId = call.workspaceId ?: tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null },
+                                    tenantId = call.tenantId ?: activeTenantId
                                 )
                                 leadDao.insert(newLead)
                             }
@@ -314,12 +361,18 @@ class CallRepositoryImpl(
                     }
                 }
 
-                // If this call has a recording upload task, trigger upload now that lead is confirmed on backend!
+                // If this call has a recording upload task belonging to current tenant, trigger upload now!
                 if (uploadTaskDao != null && context != null) {
                     try {
                         val task = uploadTaskDao.getByCallId(call.clientCallId)
                             ?: uploadTaskDao.getByCallId(call.id)
-                        if (task != null && task.status != UploadTaskEntity.STATE_UPLOADED && task.status != UploadTaskEntity.STATUS_COMPLETED) {
+                        val taskTenantMatches = activeTenantId == null || task?.tenantId == activeTenantId
+                        if (task != null &&
+                            taskTenantMatches &&
+                            task.status != UploadTaskEntity.STATE_UPLOADED &&
+                            task.status != UploadTaskEntity.STATUS_COMPLETED &&
+                            task.status != UploadTaskEntity.STATE_TENANT_MISMATCH
+                        ) {
                             if (!serverLeadId.isNullOrBlank()) {
                                 uploadTaskDao.updateLeadIdForCall(call.id, serverLeadId)
                                 uploadTaskDao.updateLeadIdForCall(call.clientCallId, serverLeadId)
@@ -356,10 +409,23 @@ class CallRepositoryImpl(
 
     override suspend fun syncPendingCallsToBackend(): AppResult<Int> = withContext(ioDispatcher) {
         try {
-            val pendingCalls = callDao.getPendingSyncCalls().toMutableList()
+            val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+                ?: return@withContext AppResult.Success(0)
+
+            callDao.recoverUnambiguousLegacyCallsForTenant(activeTenantId)
+            callDao.quarantineMismatchedCalls(
+                activeTenantId = activeTenantId,
+                reason = "Quarantined legacy or cross-tenant call before pending sync (activeTenant='$activeTenantId')"
+            )
+
+            val pendingCalls = callDao.getPendingSyncCallsForTenant(activeTenantId).toMutableList()
             val recentCalls = callDao.getRecentCalls(100)
             for (c in recentCalls) {
-                if (c.syncStatus != "SYNCED" && pendingCalls.none { it.id == c.id || it.clientCallId == c.clientCallId }) {
+                if (c.tenantId == activeTenantId &&
+                    c.syncStatus != "SYNCED" &&
+                    c.syncStatus != CallEntity.SYNC_STATUS_QUARANTINED &&
+                    pendingCalls.none { it.id == c.id || it.clientCallId == c.clientCallId }
+                ) {
                     pendingCalls.add(c)
                 }
             }
@@ -369,6 +435,14 @@ class CallRepositoryImpl(
             var synced = 0
             for (call in pendingCalls) {
                 try {
+                    if (call.tenantId != activeTenantId) {
+                        callDao.updateSyncStatus(
+                            call.id,
+                            CallEntity.SYNC_STATUS_QUARANTINED,
+                            "Quarantined during pending sync: callTenant='${call.tenantId}', activeTenant='$activeTenantId'"
+                        )
+                        continue
+                    }
                     val result = reportCallToBackend(call.clientCallId)
                     if (result is AppResult.Success) {
                         synced++
@@ -385,6 +459,8 @@ class CallRepositoryImpl(
 
     override suspend fun syncCallsFromBackend(): AppResult<Int> = withContext(ioDispatcher) {
         try {
+            val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+            val activeWorkspaceId = tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
             val response = callApiService.getCalls()
             if (!response.success) {
                 return@withContext AppResult.Failure(AppError.NetworkError(response.error ?: "Failed to fetch calls from server"))
@@ -397,24 +473,31 @@ class CallRepositoryImpl(
                 val rawPhone = dto.phoneNumber ?: dto.number ?: ""
                 val serverOutcome = dto.callOutcome ?: dto.outcome
                 val hasRec = dto.hasRecording || (dto.recordingFileId != null)
+                val effectiveTenantId = dto.tenantId?.trim()?.ifEmpty { null } ?: activeTenantId
+                val effectiveWorkspaceId = dto.workspaceId?.trim()?.ifEmpty { null } ?: activeWorkspaceId
 
-                if (existing != null) {
+                val canAdoptNullLegacy = existing?.tenantId == null &&
+                    effectiveTenantId != null &&
+                    existing?.clientCallId?.startsWith("call_${effectiveTenantId}_") == true
+                if (existing != null && (existing.tenantId == effectiveTenantId || canAdoptNullLegacy)) {
                     // Update existing canonical call: retain local outcome if server outcome is pending/null
                     val updated = existing.copy(
                         callOutcome = serverOutcome ?: existing.callOutcome,
                         notes = dto.notes ?: existing.notes,
                         hasRecording = hasRec || existing.hasRecording,
-                        syncStatus = "SYNCED"
+                        syncStatus = "SYNCED",
+                        tenantId = existing.tenantId ?: effectiveTenantId,
+                        workspaceId = existing.workspaceId ?: effectiveWorkspaceId
                     )
                     callDao.update(updated)
-                } else {
-                    // Fallback matching: signature search (phone + start time within 5000ms)
+                } else if (existing == null) {
+                    // Fallback matching: signature search (phone + start time within 5000ms) scoped to matching/unset tenant
                     val startTime = dto.startTimeMs ?: System.currentTimeMillis()
                     val candidates = callDao.findCandidatesBySignature(
                         normalizedNumber = rawPhone,
                         minStartEpochMs = startTime - 5000L,
                         maxStartEpochMs = startTime + 5000L
-                    )
+                    ).filter { effectiveTenantId == null || it.tenantId == effectiveTenantId }
 
                     if (candidates.size == 1) {
                         // Unambiguous candidate match: merge server attributes into canonical existing entity
@@ -424,7 +507,9 @@ class CallRepositoryImpl(
                             callOutcome = serverOutcome ?: candidate.callOutcome,
                             notes = dto.notes ?: candidate.notes,
                             hasRecording = hasRec || candidate.hasRecording,
-                            syncStatus = "SYNCED"
+                            syncStatus = "SYNCED",
+                            tenantId = candidate.tenantId ?: effectiveTenantId,
+                            workspaceId = candidate.workspaceId ?: effectiveWorkspaceId
                         )
                         callDao.update(updated)
                     } else if (candidates.isEmpty()) {
@@ -451,12 +536,13 @@ class CallRepositoryImpl(
                             notes = dto.notes,
                             hasRecording = hasRec,
                             syncStatus = "SYNCED",
-                            createdAtEpochMs = startTime
+                            createdAtEpochMs = startTime,
+                            workspaceId = effectiveWorkspaceId,
+                            tenantId = effectiveTenantId
                         )
                         callDao.insert(entity)
                         insertedCount++
                     } else {
-                        // Multiple candidate matches found: do not guess or merge per strict safety rules!
                         android.util.Log.w("CallRepository", "Ambiguous call candidates found (${candidates.size}) for phone=$rawPhone, start=$startTime. Skipping merge.")
                     }
                 }
@@ -508,6 +594,14 @@ class CallRepositoryImpl(
             }
 
             for (call in unassignedCalls) {
+                val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+                val effectiveLeadTenant = lead.tenantId?.trim()?.ifEmpty { null } ?: activeTenantId
+                if (effectiveLeadTenant != null && call.tenantId != null && call.tenantId != effectiveLeadTenant) {
+                    continue
+                }
+                if (call.syncStatus == CallEntity.SYNC_STATUS_QUARANTINED) {
+                    continue
+                }
                 // Safety check: Never silently reassign a call already linked to a different lead
                 if (!call.leadId.isNullOrBlank() && call.leadId != lead.id) {
                     continue
@@ -625,7 +719,10 @@ class CallRepositoryImpl(
             var reconciledCount = 0
             val matcher = TargetedRecordingMatcher()
 
+            val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
             for (call in unmatchedCalls) {
+                if (call.syncStatus == CallEntity.SYNC_STATUS_QUARANTINED) continue
+                if (activeTenantId != null && (call.tenantId.isNullOrBlank() || call.tenantId != activeTenantId)) continue
                 val availableCandidates = candidateList.filter { 
                     it.uriString !in assignedUris && it.displayName !in assignedNames 
                 }
@@ -685,7 +782,9 @@ class CallRepositoryImpl(
                                 localFileUri = matched.uriString,
                                 fileName = matched.displayName,
                                 fileSizeBytes = matched.sizeBytes,
-                                status = UploadTaskEntity.STATUS_PENDING
+                                status = UploadTaskEntity.STATUS_PENDING,
+                                tenantId = call.tenantId ?: activeTenantId,
+                                workspaceId = call.workspaceId ?: tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
                             )
                             uploadTaskDao.insert(newTask)
                             newTask
@@ -695,7 +794,9 @@ class CallRepositoryImpl(
                                 leadId = call.leadId ?: existingTask.leadId ?: "unlinked",
                                 localFileUri = matched.uriString,
                                 fileName = matched.displayName,
-                                fileSizeBytes = matched.sizeBytes
+                                fileSizeBytes = matched.sizeBytes,
+                                tenantId = existingTask.tenantId ?: call.tenantId ?: activeTenantId,
+                                workspaceId = existingTask.workspaceId ?: call.workspaceId ?: tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
                             )
                             uploadTaskDao.update(updatedTask)
                             updatedTask

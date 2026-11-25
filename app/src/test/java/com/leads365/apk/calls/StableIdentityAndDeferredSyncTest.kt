@@ -169,9 +169,13 @@ class StableIdentityAndDeferredSyncTest {
     }
 
     @Test
-    fun testCallProcessing_whenIdentityMissing_safelyDefersCallWithoutDropping() = runBlocking {
-        // TokenProvider with NO tenant and NO install id
-        val tokenProvider = InMemoryTokenProvider()
+    fun testCallProcessing_whenDeviceInstallMissingForBoundTenant_defersSafelyAndUpgradesOnlyForSameTenant() = runBlocking {
+        // Bound to tenant_acme, but deviceId/installId is missing initially
+        val tokenProvider = InMemoryTokenProvider(
+            accessToken = "tok_acme",
+            deviceIdOrInstallId = null,
+            agencyAccountId = "tenant_acme"
+        )
 
         val leadRepository = LeadRepositoryImpl(leadDao, leadApiService, context, normalizer, Dispatchers.Unconfined)
         val callRepository = CallRepositoryImpl(callDao, callApiService, Dispatchers.Unconfined, tokenProvider)
@@ -186,7 +190,7 @@ class StableIdentityAndDeferredSyncTest {
             tokenProvider = tokenProvider
         )
 
-        val lead = LeadEntity(id = "lead_2", name = "Priya Sharma", rawNumber = "9876500000", normalizedNumber = "+919876500000")
+        val lead = LeadEntity(id = "lead_2", name = "Priya Sharma", rawNumber = "9876500000", normalizedNumber = "+919876500000", tenantId = "tenant_acme")
         leadDao.insert(lead)
 
         val callEvent = CallEvent(
@@ -205,19 +209,19 @@ class StableIdentityAndDeferredSyncTest {
         val call = (result as CallProcessingResult.Recorded).call
         assertTrue("Deferred call must have local_pending_call_ prefix", call.clientCallId.startsWith("local_pending_call_"))
         assertEquals("DEFERRED_IDENTITY", call.syncStatus)
+        assertEquals("tenant_acme", call.tenantId)
 
         // Verify call is preserved in Room database!
         val dbCall = callDao.getById(call.id)
-        assertNotNull("Call must not be dropped when identity is missing", dbCall)
+        assertNotNull("Call must not be dropped when install identity is missing", dbCall)
         assertEquals("DEFERRED_IDENTITY", dbCall?.syncStatus)
 
-        // Attempting to report without identity must defer safely
+        // Attempting to report without installId must defer safely
         val reportResult1 = callRepository.reportCallToBackend(call.id)
-        assertTrue("Reporting without identity must fail with AuthError", reportResult1 is AppResult.Failure)
+        assertTrue("Reporting without installId must fail with AuthError", reportResult1 is AppResult.Failure)
         assertEquals("DEFERRED_IDENTITY", callDao.getById(call.id)?.syncStatus)
 
-        // Now resolve identity (e.g. login completes)
-        tokenProvider.setAgencyAccountId("tenant_acme")
+        // Now resolve device/install identity for the SAME bound tenant (tenant_acme)
         tokenProvider.setDeviceIdOrInstallId("inst_778899")
 
         // Setup mock response
@@ -230,9 +234,9 @@ class StableIdentityAndDeferredSyncTest {
         )
         mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(responseJson))
 
-        // Retrying report must now upgrade the canonical ID and succeed
+        // Retrying report must now upgrade canonical ID and succeed under matching tenant
         val reportResult2 = callRepository.reportCallToBackend(call.id)
-        assertTrue("Reporting after identity resolution must succeed", reportResult2 is AppResult.Success)
+        assertTrue("Reporting after same-tenant identity resolution must succeed", reportResult2 is AppResult.Success)
 
         val recordedRequest = mockWebServer.takeRequest()
         assertTrue(recordedRequest.body.readUtf8().contains("call_tenant_acme_inst_778899_native_log_456"))
@@ -240,5 +244,51 @@ class StableIdentityAndDeferredSyncTest {
         val finalDbCall = callDao.getById(call.id)
         assertEquals("SYNCED", finalDbCall?.syncStatus)
         assertEquals("call_tenant_acme_inst_778899_native_log_456", finalDbCall?.clientCallId)
+    }
+
+    @Test
+    fun unboundOrMismatchedDeferredCall_neverAttributesDynamicallyToAnotherLoggedInTenant() = runBlocking {
+        // Call captured without any bound tenant identity
+        val tokenProvider = InMemoryTokenProvider()
+
+        val leadRepository = LeadRepositoryImpl(leadDao, leadApiService, context, normalizer, Dispatchers.Unconfined)
+        val callRepository = CallRepositoryImpl(callDao, callApiService, Dispatchers.Unconfined, tokenProvider)
+        val pendingCallManager = PendingCallManager(context, normalizer)
+
+        val callProcessingManager = CallProcessingManager(
+            leadRepository = leadRepository,
+            callRepository = callRepository,
+            pendingCallManager = pendingCallManager,
+            normalizer = normalizer,
+            recordingDiscoveryCoordinator = null,
+            tokenProvider = tokenProvider
+        )
+
+        val lead = LeadEntity(id = "lead_unauth", name = "Priya Unauth", rawNumber = "9876500001", normalizedNumber = "+919876500001")
+        leadDao.insert(lead)
+
+        val callEvent = CallEvent(
+            id = "native_log_unauth",
+            rawNumber = "9876500001",
+            normalizedNumber = "+919876500001",
+            startTimeEpochMs = 1700000001000L,
+            endTimeEpochMs = 1700000031000L,
+            durationSeconds = 30L,
+            direction = CallDirection.OUTGOING
+        )
+
+        val result = callProcessingManager.processCallEvent(callEvent)
+        val call = (result as CallProcessingResult.Recorded).call
+        assertNull(call.tenantId)
+        assertEquals("DEFERRED_IDENTITY", call.syncStatus)
+
+        // Another tenant (Tenant B) logs in afterward
+        tokenProvider.setAgencyAccountId("tenant_beta")
+        tokenProvider.setDeviceIdOrInstallId("inst_beta")
+
+        val reportResult = callRepository.reportCallToBackend(call.id)
+        assertTrue("Unbound call must NOT be dynamically attributed to Tenant B", reportResult is AppResult.Failure)
+        assertEquals(0, mockWebServer.requestCount)
+        assertEquals("QUARANTINED_TENANT_MISMATCH", callDao.getById(call.id)?.syncStatus)
     }
 }

@@ -48,7 +48,9 @@ data class CallDto(
     @SerialName("simId") val simId: String? = null,
     @SerialName("hasRecording") val hasRecording: Boolean = false,
     @SerialName("recordingFileId") val recordingFileId: String? = null,
-    @SerialName("isUnlinked") val isUnlinked: Boolean = false
+    @SerialName("isUnlinked") val isUnlinked: Boolean = false,
+    @SerialName("tenantId") val tenantId: String? = null,
+    @SerialName("workspaceId") val workspaceId: String? = null
 )
 
 @Serializable

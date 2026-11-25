@@ -31,7 +31,7 @@ class AccessTokenInterceptor(
         }
 
         val activeWorkspaceId = tokenProvider.getActiveWorkspaceId()
-        if (!activeWorkspaceId.isNullOrBlank()) {
+        if (original.header(HEADER_WORKSPACE_ID) == null && !activeWorkspaceId.isNullOrBlank()) {
             builder.header(HEADER_WORKSPACE_ID, activeWorkspaceId)
         }
 

@@ -18,4 +18,15 @@ interface UploadQueueRepository {
     suspend fun clearCompleted(): AppResult<Unit>
     suspend fun cleanExpiredTerminalTasks(retentionPeriodMs: Long = 7 * 24 * 60 * 60 * 1000L): AppResult<Int> = AppResult.Success(0)
     suspend fun getClaimedFileUris(excludeCallId: String): Set<String> = emptySet()
+    suspend fun quarantineMismatchedTasks(activeTenantId: String, reason: String): AppResult<Int> = AppResult.Success(0)
+    suspend fun quarantineAllNonTerminalTasks(reason: String): AppResult<Int> = AppResult.Success(0)
+    suspend fun restoreQuarantinedTasksForTenant(tenantId: String): AppResult<Int> = AppResult.Success(0)
+    suspend fun getPendingTasksForTenant(tenantId: String): AppResult<List<UploadTaskEntity>> {
+        val all = (getPendingTasks() as? AppResult.Success)?.data.orEmpty()
+        return AppResult.Success(all.filter { it.tenantId == tenantId })
+    }
+    suspend fun getTasksByStatusForTenant(status: String, tenantId: String): AppResult<List<UploadTaskEntity>> {
+        val all = (getTasksByStatus(status) as? AppResult.Success)?.data.orEmpty()
+        return AppResult.Success(all.filter { it.tenantId == tenantId })
+    }
 }

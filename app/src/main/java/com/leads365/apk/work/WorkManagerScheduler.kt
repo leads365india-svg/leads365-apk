@@ -15,6 +15,7 @@ import com.leads365.apk.core.AppResult
 import com.leads365.apk.data.repository.PolicyRepository
 import com.leads365.apk.data.repository.UploadQueueRepository
 import com.leads365.apk.database.entity.UploadTaskEntity
+import com.leads365.apk.network.auth.TokenProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import java.util.concurrent.TimeUnit
@@ -22,12 +23,44 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-open class WorkManagerScheduler @Inject constructor(
-    @ApplicationContext private val context: Context,
+open class WorkManagerScheduler(
+    private val context: Context,
     private val workManager: WorkManager,
     private val uploadQueueRepository: UploadQueueRepository? = null,
-    private val policyRepository: PolicyRepository? = null
+    private val policyRepository: PolicyRepository? = null,
+    private val tokenProvider: TokenProvider? = null,
+    @Suppress("UNUSED_PARAMETER") dummy: Unit = Unit
 ) {
+
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        workManager: WorkManager,
+        uploadQueueRepository: UploadQueueRepository,
+        policyRepository: PolicyRepository,
+        tokenProvider: TokenProvider
+    ) : this(
+        context = context,
+        workManager = workManager,
+        uploadQueueRepository = uploadQueueRepository,
+        policyRepository = policyRepository,
+        tokenProvider = tokenProvider,
+        dummy = Unit
+    )
+
+    constructor(
+        context: Context,
+        workManager: WorkManager,
+        uploadQueueRepository: UploadQueueRepository? = null,
+        policyRepository: PolicyRepository? = null
+    ) : this(
+        context = context,
+        workManager = workManager,
+        uploadQueueRepository = uploadQueueRepository,
+        policyRepository = policyRepository,
+        tokenProvider = null,
+        dummy = Unit
+    )
 
     open fun scheduleUploadTask(
         taskId: String,
@@ -95,7 +128,25 @@ open class WorkManagerScheduler @Inject constructor(
             return 0
         }
 
-        // 0. Clean expired terminal tasks older than 7 days to safely bound queue growth
+        // 0. Enforce strict tenant isolation before resuming any uploads
+        val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+        if (tokenProvider != null && activeTenantId.isNullOrBlank()) {
+            Log.i(TAG, "No authenticated tenant identity; skipping upload resumption.")
+            return 0
+        }
+
+        if (activeTenantId != null) {
+            try {
+                repo.quarantineMismatchedTasks(
+                    activeTenantId = activeTenantId,
+                    reason = "Quarantined mismatched upload task (active tenant=$activeTenantId)"
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Error quarantining mismatched upload tasks: ${e.message}")
+            }
+        }
+
+        // 0b. Clean expired terminal tasks older than 7 days to safely bound queue growth
         try {
             repo.cleanExpiredTerminalTasks()
         } catch (e: Exception) {
@@ -105,15 +156,27 @@ open class WorkManagerScheduler @Inject constructor(
         var resumedCount = 0
 
         // 1. Recover any tasks stuck in UPLOADING due to process termination / reboot
-        val stuckTasks = (repo.getTasksByStatus(UploadTaskEntity.STATE_UPLOADING) as? AppResult.Success)?.data.orEmpty()
+        val stuckTasks = (if (activeTenantId != null) {
+            repo.getTasksByStatusForTenant(UploadTaskEntity.STATE_UPLOADING, activeTenantId)
+        } else {
+            repo.getTasksByStatus(UploadTaskEntity.STATE_UPLOADING)
+        } as? AppResult.Success)?.data.orEmpty()
         for (task in stuckTasks) {
             Log.i(TAG, "Resetting interrupted upload task ${task.id} to RETRY_WAIT after process termination")
             repo.updateStatus(task.id, UploadTaskEntity.STATE_RETRY_WAIT, "Resumed after process death / reboot")
         }
 
-        // 2. Resume all pending and retryable tasks
-        val pending = (repo.getPendingTasks() as? AppResult.Success)?.data.orEmpty()
-        val retryWait = (repo.getTasksByStatus(UploadTaskEntity.STATE_RETRY_WAIT) as? AppResult.Success)?.data.orEmpty()
+        // 2. Resume all pending and retryable tasks belonging strictly to the active tenant
+        val pending = (if (activeTenantId != null) {
+            repo.getPendingTasksForTenant(activeTenantId)
+        } else {
+            repo.getPendingTasks()
+        } as? AppResult.Success)?.data.orEmpty()
+        val retryWait = (if (activeTenantId != null) {
+            repo.getTasksByStatusForTenant(UploadTaskEntity.STATE_RETRY_WAIT, activeTenantId)
+        } else {
+            repo.getTasksByStatus(UploadTaskEntity.STATE_RETRY_WAIT)
+        } as? AppResult.Success)?.data.orEmpty()
         val allToResume = (pending + retryWait).distinctBy { it.id }
 
         for (task in allToResume) {
@@ -137,8 +200,16 @@ open class WorkManagerScheduler @Inject constructor(
         return workManager.getWorkInfosByTagFlow(tag)
     }
 
-    fun cancelUploadTask(taskId: String) {
+    open fun cancelUploadTask(taskId: String) {
         workManager.cancelUniqueWork("${RecordingUploadWorker.WORK_NAME_PREFIX}$taskId")
+    }
+
+    open fun cancelAllRecordingUploads() {
+        workManager.cancelAllWorkByTag("recording_upload")
+    }
+
+    open fun cancelAllWorkForIdentityChange() {
+        workManager.cancelAllWork()
     }
 
     open fun schedulePeriodicLeadSync() {

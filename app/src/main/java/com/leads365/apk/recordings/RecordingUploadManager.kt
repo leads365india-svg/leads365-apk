@@ -46,6 +46,12 @@ sealed class UploadExecutionResult {
         val statusCode: Int,
         val reason: String
     ) : UploadExecutionResult()
+
+    data class QuarantinedTenantMismatch(
+        val taskTenantId: String?,
+        val sessionTenantId: String?,
+        val reason: String
+    ) : UploadExecutionResult()
 }
 
 @Singleton
@@ -98,6 +104,29 @@ open class RecordingUploadManager @Inject constructor(
         val callId = task.callId
         if (callId.isNullOrBlank()) {
             return@withContext UploadExecutionResult.PermanentFailure(null, "Missing callId on upload task")
+        }
+
+        // 0. Strict tenant isolation check BEFORE touching file streams or network
+        val token = tokenProvider.getAccessToken()
+        val taskTenantId = task.tenantId?.trim()?.ifEmpty { null }
+        val sessionTenantId = tokenProvider.getAgencyAccountId()?.trim()?.ifEmpty { null }
+            ?: extractTenantIdFromJwt(token)
+
+        if (taskTenantId != null && (sessionTenantId == null || taskTenantId != sessionTenantId)) {
+            Log.w(TAG, "QUARANTINE: Blocking upload for task ${task.id}. taskTenant=$taskTenantId, sessionTenant=$sessionTenantId")
+            return@withContext UploadExecutionResult.QuarantinedTenantMismatch(
+                taskTenantId = taskTenantId,
+                sessionTenantId = sessionTenantId,
+                reason = "Tenant mismatch: task belongs to '$taskTenantId', active session is '${sessionTenantId ?: "unauthenticated"}'"
+            )
+        }
+        if (sessionTenantId != null && (taskTenantId == null || taskTenantId != sessionTenantId)) {
+            Log.w(TAG, "QUARANTINE: Blocking unbound/mismatched task ${task.id}. taskTenant=$taskTenantId, sessionTenant=$sessionTenantId")
+            return@withContext UploadExecutionResult.QuarantinedTenantMismatch(
+                taskTenantId = taskTenantId,
+                sessionTenantId = sessionTenantId,
+                reason = "Tenant isolation blocked upload: task tenant '${taskTenantId ?: "unbound"}' does not match session '$sessionTenantId'"
+            )
         }
 
         // 1. Max File Size Enforcement (50MB upfront check)
@@ -174,7 +203,10 @@ open class RecordingUploadManager @Inject constructor(
             .addHeader("X-Audio-SHA256", checksumSha256)
             .addHeader("X-File-Name", redactedName)
 
-        val token = tokenProvider.getAccessToken()
+        if (!task.workspaceId.isNullOrBlank()) {
+            requestBuilder.addHeader("X-Workspace-Id", task.workspaceId)
+        }
+
         if (token.isNullOrBlank()) {
             Log.i(TAG, "Local Recording Test Mode: Server upload disabled because no authenticated session exists.")
             return@withContext UploadExecutionResult.PermanentFailure(
@@ -245,6 +277,22 @@ open class RecordingUploadManager @Inject constructor(
             UploadExecutionResult.RetryableFailure(null, "Network I/O failure during streaming upload: ${e.message}")
         } catch (e: Exception) {
             UploadExecutionResult.PermanentFailure(null, "Upload error: ${e.message}")
+        }
+    }
+
+    internal fun extractTenantIdFromJwt(token: String?): String? {
+        if (token.isNullOrBlank()) return null
+        return try {
+            val parts = token.split(".")
+            if (parts.size != 3) return null
+            val decodedBytes = android.util.Base64.decode(
+                parts[1],
+                android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
+            )
+            val payload = JSONObject(String(decodedBytes, Charsets.UTF_8))
+            payload.optString("tenantId", "").trim().ifEmpty { null }
+        } catch (_: Exception) {
+            null
         }
     }
 

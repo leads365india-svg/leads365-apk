@@ -9,10 +9,12 @@ import com.leads365.apk.core.PhoneNumberNormalizer
 import com.leads365.apk.core.PrivacyRedactor
 import com.leads365.apk.core.RecordingCandidate
 import com.leads365.apk.core.RecordingMatchResult
+import com.leads365.apk.core.AppResult
 import com.leads365.apk.data.repository.CallRepository
 import com.leads365.apk.data.repository.UploadQueueRepository
 import com.leads365.apk.database.entity.LeadEntity
 import com.leads365.apk.database.entity.UploadTaskEntity
+import com.leads365.apk.network.auth.TokenProvider
 import com.leads365.apk.work.RecordingUploadWorker
 import com.leads365.apk.work.WorkManagerScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -59,7 +61,8 @@ class RecordingDiscoveryCoordinator(
     private val normalizer: PhoneNumberNormalizer,
     delayProvider: suspend (Long) -> Unit = { delay(it) },
     private val context: Context? = null,
-    private val workManagerScheduler: WorkManagerScheduler? = null
+    private val workManagerScheduler: WorkManagerScheduler? = null,
+    private val tokenProvider: TokenProvider? = null
 ) {
     var delayProvider: suspend (Long) -> Unit = delayProvider
 
@@ -72,7 +75,8 @@ class RecordingDiscoveryCoordinator(
         callRepository: CallRepository,
         uploadQueueRepository: UploadQueueRepository,
         normalizer: PhoneNumberNormalizer,
-        workManagerScheduler: WorkManagerScheduler
+        workManagerScheduler: WorkManagerScheduler,
+        tokenProvider: TokenProvider
     ) : this(
         safRecordingSource = safRecordingSource,
         mediaStoreRecordingSource = mediaStoreRecordingSource,
@@ -82,7 +86,8 @@ class RecordingDiscoveryCoordinator(
         normalizer = normalizer,
         delayProvider = { delay(it) },
         context = context,
-        workManagerScheduler = workManagerScheduler
+        workManagerScheduler = workManagerScheduler,
+        tokenProvider = tokenProvider
     )
 
     constructor(
@@ -183,7 +188,16 @@ class RecordingDiscoveryCoordinator(
                     recordingFileSizeBytes = matched.sizeBytes
                 )
 
-                // Enqueue upload task for Phase 8
+                val callRecord = (callRepository.getCallById(targetCallId) as? AppResult.Success)?.data
+                    ?: (callRepository.getByClientCallId(targetCallId) as? AppResult.Success)?.data
+                val boundTenantId = callRecord?.tenantId?.trim()?.ifEmpty { null }
+                    ?: lead?.tenantId?.trim()?.ifEmpty { null }
+                    ?: tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+                val boundWorkspaceId = callRecord?.workspaceId?.trim()?.ifEmpty { null }
+                    ?: lead?.workspaceId?.trim()?.ifEmpty { null }
+                    ?: tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
+
+                // Enqueue upload task for Phase 8 with immutable tenant/workspace ownership
                 val uploadTask = UploadTaskEntity(
                     id = UUID.randomUUID().toString(),
                     callId = targetCallId,
@@ -191,7 +205,9 @@ class RecordingDiscoveryCoordinator(
                     localFileUri = matched.uriString,
                     fileName = matched.displayName,
                     fileSizeBytes = matched.sizeBytes,
-                    status = UploadTaskEntity.STATUS_PENDING
+                    status = UploadTaskEntity.STATUS_PENDING,
+                    tenantId = boundTenantId,
+                    workspaceId = boundWorkspaceId
                 )
                 uploadQueueRepository.enqueueTask(uploadTask)
 

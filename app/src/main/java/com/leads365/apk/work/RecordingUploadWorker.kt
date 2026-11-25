@@ -90,7 +90,32 @@ class RecordingUploadWorker(
             return@withContext Result.failure()
         }
 
-        // 2. Phase 9: Check if recording sync is paused by agency policy
+        // 2. Enforce strict tenant isolation before touching policy, network, or call pre-upload sync
+        val sessionTenantId = authRepository.getTenantId()?.trim()?.ifEmpty { null }
+        val taskTenantId = task.tenantId?.trim()?.ifEmpty { null }
+        val targetCallId = task.callId
+        val localCall = if (!targetCallId.isNullOrBlank()) {
+            (callRepository.getCallById(targetCallId) as? AppResult.Success)?.data
+                ?: (callRepository.getByClientCallId(targetCallId) as? AppResult.Success)?.data
+        } else null
+        val callTenantId = localCall?.tenantId?.trim()?.ifEmpty { null }
+
+        if (sessionTenantId.isNullOrBlank() ||
+            taskTenantId.isNullOrBlank() ||
+            taskTenantId != sessionTenantId ||
+            (callTenantId != null && callTenantId != sessionTenantId)
+        ) {
+            val quarantineReason = "Tenant isolation quarantine: sessionTenant=$sessionTenantId, taskTenant=$taskTenantId, callTenant=$callTenantId"
+            Log.w(TAG, "$quarantineReason. Preserving audio metadata for task ${task.id}.")
+            uploadQueueRepository.updateStatus(
+                task.id,
+                UploadTaskEntity.STATE_TENANT_MISMATCH,
+                quarantineReason
+            )
+            return@withContext Result.failure()
+        }
+
+        // 2b. Phase 9: Check if recording sync is paused by agency policy
         val policyRepository = entryPoint.policyRepository()
         if (policyRepository.isRecordingSyncPaused()) {
             Log.i(TAG, "Recording sync is paused by agency policy. Deferring task ${task.id}.")
@@ -122,9 +147,7 @@ class RecordingUploadWorker(
         }
 
         // 4. Ensure Call Record is Persisted to Backend (Required before file streaming)
-        val targetCallId = task.callId
         if (!targetCallId.isNullOrBlank()) {
-            val localCall = (callRepository.getCallById(targetCallId) as? AppResult.Success)?.data
             if (localCall != null && localCall.syncStatus != "SYNCED") {
                 Log.i(TAG, "Call record $targetCallId has syncStatus=${localCall.syncStatus}. Synchronizing to backend before file upload.")
                 val reportResult = callRepository.reportCallToBackend(targetCallId)
@@ -230,6 +253,15 @@ class RecordingUploadWorker(
                     showNotification(applicationContext, task.fileName, "Upload failed permanently")
                     Result.failure()
                 }
+            }
+            is UploadExecutionResult.QuarantinedTenantMismatch -> {
+                Log.w(TAG, "Task ${task.id} quarantined on tenant mismatch: ${result.reason}")
+                uploadQueueRepository.updateStatus(
+                    task.id,
+                    UploadTaskEntity.STATE_TENANT_MISMATCH,
+                    result.reason
+                )
+                Result.failure()
             }
         }
     }

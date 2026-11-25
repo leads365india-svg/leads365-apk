@@ -206,7 +206,9 @@ class CallsViewModel @Inject constructor(
                 localFileUri = call.recordingUri!!,
                 fileName = call.recordingFileName ?: "recording_${System.currentTimeMillis()}.m4a",
                 fileSizeBytes = call.recordingFileSizeBytes ?: 0L,
-                status = UploadTaskEntity.STATUS_PENDING
+                status = UploadTaskEntity.STATUS_PENDING,
+                tenantId = call.tenantId,
+                workspaceId = call.workspaceId
             )
             uploadQueueRepository.enqueueTask(newTask)
             task = newTask

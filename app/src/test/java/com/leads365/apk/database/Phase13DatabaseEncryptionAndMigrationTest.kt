@@ -3,6 +3,9 @@ package com.leads365.apk.database
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import com.leads365.apk.database.entity.CallEntity
 import com.leads365.apk.database.entity.LeadEntity
@@ -250,5 +253,173 @@ class Phase13DatabaseEncryptionAndMigrationTest {
             val idempotentResult = DatabaseSecurityMigrator.ensureEncrypted(context, testDbName, passphrase)
             assertEquals(DatabaseSecurityMigrator.MigrationResult.AlreadyEncrypted, idempotentResult)
         }
+    }
+
+    // =========================================================================
+    // 5. Room MIGRATION_7_8 Test (Preserves Pending Offline Recordings)
+    // =========================================================================
+
+    @Test
+    fun migration_7_to_8_addsTenantAndWorkspaceColumnsPreservingOfflineRecordings() {
+        val migDbName = "mig_v7_v8_test.db"
+        val dbFile = context.getDatabasePath(migDbName)
+        if (dbFile.exists()) dbFile.delete()
+        dbFile.parentFile?.mkdirs()
+
+        val factory = FrameworkSQLiteOpenHelperFactory()
+
+        // 1. Create a schema version 7 database and seed offline call/lead/upload task rows
+        val v7Helper = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(migDbName)
+                .callback(object : SupportSQLiteOpenHelper.Callback(7) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE leads (
+                                id TEXT NOT NULL PRIMARY KEY,
+                                normalizedNumber TEXT NOT NULL,
+                                rawNumber TEXT NOT NULL,
+                                name TEXT NOT NULL,
+                                status TEXT NOT NULL DEFAULT 'New',
+                                nextFollowUpEpochMs INTEGER DEFAULT NULL,
+                                assignedAgentId TEXT DEFAULT NULL,
+                                notes TEXT DEFAULT NULL,
+                                isDoNotRecord INTEGER NOT NULL DEFAULT 0,
+                                updatedAtEpochMs INTEGER NOT NULL DEFAULT 0,
+                                workspaceId TEXT DEFAULT NULL
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            CREATE TABLE calls (
+                                id TEXT NOT NULL PRIMARY KEY,
+                                clientCallId TEXT NOT NULL,
+                                normalizedNumber TEXT NOT NULL,
+                                rawNumber TEXT NOT NULL,
+                                callType INTEGER NOT NULL,
+                                startTimeEpochMs INTEGER NOT NULL,
+                                durationSeconds INTEGER NOT NULL,
+                                isLeadCall INTEGER NOT NULL,
+                                leadId TEXT DEFAULT NULL,
+                                simId TEXT DEFAULT NULL,
+                                callOutcome TEXT DEFAULT NULL,
+                                notes TEXT DEFAULT NULL,
+                                nextFollowUpEpochMs INTEGER DEFAULT NULL,
+                                syncStatus TEXT NOT NULL DEFAULT 'PENDING',
+                                syncErrorMessage TEXT DEFAULT NULL,
+                                hasRecording INTEGER NOT NULL DEFAULT 0,
+                                recordingUri TEXT DEFAULT NULL,
+                                recordingFileName TEXT DEFAULT NULL,
+                                recordingFileSizeBytes INTEGER DEFAULT NULL,
+                                createdAtEpochMs INTEGER NOT NULL DEFAULT 0,
+                                recordingOrigin TEXT NOT NULL DEFAULT 'sim_call',
+                                remoteRecordingUrl TEXT DEFAULT NULL,
+                                isDownloaded INTEGER NOT NULL DEFAULT 0,
+                                localFilePath TEXT DEFAULT NULL,
+                                workspaceId TEXT DEFAULT NULL
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            CREATE TABLE upload_tasks (
+                                id TEXT NOT NULL PRIMARY KEY,
+                                callId TEXT DEFAULT NULL,
+                                leadId TEXT DEFAULT NULL,
+                                localFileUri TEXT NOT NULL,
+                                fileName TEXT NOT NULL,
+                                fileSizeBytes INTEGER NOT NULL,
+                                sha256Hash TEXT DEFAULT NULL,
+                                status TEXT NOT NULL DEFAULT 'PENDING',
+                                retryCount INTEGER NOT NULL DEFAULT 0,
+                                maxRetries INTEGER NOT NULL DEFAULT 3,
+                                lastError TEXT DEFAULT NULL,
+                                createdAtEpochMs INTEGER NOT NULL DEFAULT 0,
+                                updatedAtEpochMs INTEGER NOT NULL DEFAULT 0
+                            )
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                })
+                .build()
+        )
+        v7Helper.writableDatabase.use { db ->
+            db.execSQL(
+                "INSERT INTO leads (id, normalizedNumber, rawNumber, name, workspaceId) VALUES ('lead_v7', '+919800000001', '9800000001', 'Legacy Lead', 'ws_legacy')"
+            )
+            db.execSQL(
+                "INSERT INTO calls (id, clientCallId, normalizedNumber, rawNumber, callType, startTimeEpochMs, durationSeconds, isLeadCall, leadId, hasRecording, recordingUri, workspaceId) " +
+                    "VALUES ('call_v7', 'client_v7', '+919800000001', '9800000001', 1, 1700000000000, 60, 1, 'lead_v7', 1, 'content://media/v7_offline.m4a', 'ws_legacy')"
+            )
+            db.execSQL(
+                "INSERT INTO upload_tasks (id, callId, leadId, localFileUri, fileName, fileSizeBytes, status) " +
+                    "VALUES ('task_v7', 'call_v7', 'lead_v7', 'content://media/v7_offline.m4a', 'v7_offline.m4a', 4096, 'PENDING')"
+            )
+        }
+        v7Helper.close()
+
+        // 2. Upgrade 7 -> 8 using real Leads365Database.MIGRATION_7_8
+        val v8Helper = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(migDbName)
+                .callback(object : SupportSQLiteOpenHelper.Callback(8) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                        assertEquals(7, oldVersion)
+                        assertEquals(8, newVersion)
+                        Leads365Database.MIGRATION_7_8.migrate(db)
+                    }
+                })
+                .build()
+        )
+
+        v8Helper.writableDatabase.use { db ->
+            fun tableColumns(table: String): Set<String> {
+                val cols = mutableSetOf<String>()
+                db.query("PRAGMA table_info($table)").use { c ->
+                    val nameIdx = c.getColumnIndexOrThrow("name")
+                    while (c.moveToNext()) cols.add(c.getString(nameIdx))
+                }
+                return cols
+            }
+
+            assertTrue("calls must have tenantId column after 7->8", tableColumns("calls").contains("tenantId"))
+            assertTrue("leads must have tenantId column after 7->8", tableColumns("leads").contains("tenantId"))
+            assertTrue("upload_tasks must have tenantId column after 7->8", tableColumns("upload_tasks").contains("tenantId"))
+            assertTrue("upload_tasks must have workspaceId column after 7->8", tableColumns("upload_tasks").contains("workspaceId"))
+
+            // Verify legacy offline recording & pending upload rows are preserved intact with null tenantId
+            db.query("SELECT id, recordingUri, syncStatus, tenantId, workspaceId FROM calls WHERE id = 'call_v7'").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("content://media/v7_offline.m4a", c.getString(1))
+                assertEquals("PENDING", c.getString(2))
+                assertTrue(c.isNull(3))
+                assertEquals("ws_legacy", c.getString(4))
+            }
+            db.query("SELECT id, localFileUri, status, tenantId, workspaceId FROM upload_tasks WHERE id = 'task_v7'").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("content://media/v7_offline.m4a", c.getString(1))
+                assertEquals("PENDING", c.getString(2))
+                assertTrue(c.isNull(3))
+                assertTrue(c.isNull(4))
+            }
+
+            // Insert new v8 tenant-pinned task row
+            db.execSQL(
+                "INSERT INTO upload_tasks (id, callId, leadId, localFileUri, fileName, fileSizeBytes, status, tenantId, workspaceId) " +
+                    "VALUES ('task_v8', 'call_v7', 'lead_v7', 'content://media/v8.m4a', 'v8.m4a', 8192, 'PENDING', 'TENANT_A', 'WS_A')"
+            )
+            db.query("SELECT tenantId, workspaceId FROM upload_tasks WHERE id = 'task_v8'").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("TENANT_A", c.getString(0))
+                assertEquals("WS_A", c.getString(1))
+            }
+        }
+        v8Helper.close()
+        dbFile.delete()
     }
 }

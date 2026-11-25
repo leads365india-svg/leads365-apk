@@ -21,7 +21,7 @@ import com.leads365.apk.database.entity.FollowUpEntity
         UploadTaskEntity::class,
         FollowUpEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class Leads365Database : RoomDatabase() {
@@ -125,6 +125,22 @@ abstract class Leads365Database : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_calls_workspaceId ON calls(workspaceId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_leads_workspaceId ON leads(workspaceId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_ups_workspaceId ON follow_ups(workspaceId)")
+            }
+        }
+
+        /**
+         * Migration from version 7 to version 8 adding strict tenant partitioning to calls, leads, and upload_tasks
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE calls ADD COLUMN tenantId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE leads ADD COLUMN tenantId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE upload_tasks ADD COLUMN tenantId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE upload_tasks ADD COLUMN workspaceId TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_calls_tenantId ON calls(tenantId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_leads_tenantId ON leads(tenantId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_upload_tasks_tenantId ON upload_tasks(tenantId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_upload_tasks_workspaceId ON upload_tasks(workspaceId)")
             }
         }
     }

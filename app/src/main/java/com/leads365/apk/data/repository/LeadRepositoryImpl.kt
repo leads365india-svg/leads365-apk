@@ -7,6 +7,7 @@ import com.leads365.apk.core.PhoneNumberNormalizer
 import com.leads365.apk.database.dao.LeadDao
 import com.leads365.apk.database.entity.LeadEntity
 import com.leads365.apk.network.api.LeadApiService
+import com.leads365.apk.network.auth.TokenProvider
 import com.leads365.apk.network.models.LeadSyncData
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -26,7 +27,8 @@ class LeadRepositoryImpl(
     @ApplicationContext private val context: Context,
     private val normalizer: PhoneNumberNormalizer,
     private val callRepositoryProvider: Provider<CallRepository>? = null,
-    directCallRepository: CallRepository? = null
+    directCallRepository: CallRepository? = null,
+    private val tokenProvider: TokenProvider? = null
 ) : LeadRepository {
 
     private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -38,8 +40,9 @@ class LeadRepositoryImpl(
         leadApiService: LeadApiService,
         @ApplicationContext context: Context,
         normalizer: PhoneNumberNormalizer,
-        callRepositoryProvider: Provider<CallRepository>
-    ) : this(leadDao, leadApiService, context, normalizer, callRepositoryProvider, null)
+        callRepositoryProvider: Provider<CallRepository>,
+        tokenProvider: TokenProvider
+    ) : this(leadDao, leadApiService, context, normalizer, callRepositoryProvider, null, tokenProvider)
 
     constructor(
         leadDao: LeadDao,
@@ -156,8 +159,15 @@ class LeadRepositoryImpl(
 
     override suspend fun syncLeads(forceFullSync: Boolean): AppResult<LeadSyncResult> = withContext(ioDispatcher) {
         val prefs = context.getSharedPreferences(PREFS_LEAD_SYNC, Context.MODE_PRIVATE)
+        val activeTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+        val activeWorkspaceId = tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
+        val watermarkKey = if (activeTenantId != null) {
+            "${KEY_LAST_SYNC_EPOCH_MS}_${activeTenantId}_${activeWorkspaceId ?: "all"}"
+        } else {
+            KEY_LAST_SYNC_EPOCH_MS
+        }
         val lastSyncTimestamp = if (forceFullSync) null else {
-            val ts = prefs.getLong(KEY_LAST_SYNC_EPOCH_MS, 0L)
+            val ts = prefs.getLong(watermarkKey, 0L)
             if (ts > 0L) ts else null
         }
 
@@ -191,12 +201,17 @@ class LeadRepositoryImpl(
                     assignedAgentId = dto.assignedToAgentId,
                     enabled = true,
                     createdAtEpochMs = dto.updatedAt,
-                    updatedAtEpochMs = dto.updatedAt
+                    updatedAtEpochMs = dto.updatedAt,
+                    workspaceId = dto.workspaceId ?: activeWorkspaceId,
+                    tenantId = dto.tenantId ?: activeTenantId
                 )
             }
 
             if (isFull) {
-                // Full reconciliation: retain only active assigned leads returned by the server
+                // Full reconciliation: remove any leads from other tenants too, retain active assigned leads
+                if (activeTenantId != null) {
+                    leadDao.deleteLeadsNotForTenant(activeTenantId)
+                }
                 val activeIds = leadEntities.map { it.id }
                 if (activeIds.isNotEmpty()) {
                     leadDao.retainOnlyActiveLeads(activeIds)
@@ -226,7 +241,7 @@ class LeadRepositoryImpl(
             }
 
             val syncTime = response.serverTime
-            prefs.edit().putLong(KEY_LAST_SYNC_EPOCH_MS, syncTime).apply()
+            prefs.edit().putLong(watermarkKey, syncTime).apply()
 
             AppResult.Success(
                 LeadSyncResult(

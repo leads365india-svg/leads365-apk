@@ -121,4 +121,44 @@ class UploadQueueRepositoryImpl @Inject constructor(
             emptySet()
         }
     }
+
+    override suspend fun quarantineMismatchedTasks(activeTenantId: String, reason: String): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            AppResult.Success(uploadTaskDao.quarantineMismatchedTasks(activeTenantId, reason))
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to quarantine mismatched tasks: ${e.message}", e))
+        }
+    }
+
+    override suspend fun quarantineAllNonTerminalTasks(reason: String): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            AppResult.Success(uploadTaskDao.quarantineAllNonTerminalTasks(reason))
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to quarantine non-terminal tasks: ${e.message}", e))
+        }
+    }
+
+    override suspend fun restoreQuarantinedTasksForTenant(tenantId: String): AppResult<Int> = withContext(ioDispatcher) {
+        try {
+            AppResult.Success(uploadTaskDao.restoreQuarantinedTasksForTenant(tenantId))
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to restore quarantined tasks: ${e.message}", e))
+        }
+    }
+
+    override suspend fun getPendingTasksForTenant(tenantId: String): AppResult<List<UploadTaskEntity>> = withContext(ioDispatcher) {
+        try {
+            AppResult.Success(uploadTaskDao.getPendingTasksForTenant(tenantId))
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to fetch tenant pending tasks: ${e.message}", e))
+        }
+    }
+
+    override suspend fun getTasksByStatusForTenant(status: String, tenantId: String): AppResult<List<UploadTaskEntity>> = withContext(ioDispatcher) {
+        try {
+            AppResult.Success(uploadTaskDao.getTasksByStatusForTenant(status, tenantId))
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.StorageError("Failed to fetch tenant tasks by status: ${e.message}", e))
+        }
+    }
 }

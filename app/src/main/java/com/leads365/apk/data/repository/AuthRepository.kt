@@ -26,6 +26,7 @@ interface AuthRepository {
     fun isLoggedIn(): Boolean
     fun getCurrentUser(): UserDto?
     fun getAgencyName(): String?
+    fun getTenantId(): String? = null
     fun getDeviceId(): String?
     fun getWorkspaces(): List<com.leads365.apk.network.models.WorkspaceDto> = emptyList()
     fun getActiveWorkspaceId(): String? = null

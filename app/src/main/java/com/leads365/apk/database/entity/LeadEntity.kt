@@ -10,7 +10,8 @@ import androidx.room.PrimaryKey
         Index(value = ["normalizedNumber"], unique = true),
         Index(value = ["updatedAtEpochMs"]),
         Index(value = ["status"]),
-        Index(value = ["workspaceId"])
+        Index(value = ["workspaceId"]),
+        Index(value = ["tenantId"])
     ]
 )
 data class LeadEntity(
@@ -27,5 +28,6 @@ data class LeadEntity(
     val enabled: Boolean = true,
     val createdAtEpochMs: Long = System.currentTimeMillis(),
     val updatedAtEpochMs: Long = System.currentTimeMillis(),
-    val workspaceId: String? = null
+    val workspaceId: String? = null,
+    val tenantId: String? = null
 )

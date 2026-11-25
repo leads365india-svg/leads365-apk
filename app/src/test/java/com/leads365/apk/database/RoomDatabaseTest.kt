@@ -118,7 +118,8 @@ class RoomDatabaseTest {
             startTimeEpochMs = 20000L,
             durationSeconds = 12L,
             isLeadCall = false,
-            leadId = null
+            leadId = null,
+            syncStatus = "SYNCED"
         )
 
         callDao.insert(call1)

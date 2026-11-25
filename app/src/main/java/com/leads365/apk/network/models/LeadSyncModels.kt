@@ -14,7 +14,9 @@ data class MobileLeadDto(
     val notes: String? = null,
     @SerialName("is_do_not_record") val isDoNotRecord: Boolean = false,
     @SerialName("assigned_to_agent_id") val assignedToAgentId: String? = null,
-    @SerialName("updated_at") val updatedAt: Long = System.currentTimeMillis()
+    @SerialName("updated_at") val updatedAt: Long = System.currentTimeMillis(),
+    @SerialName("tenant_id") val tenantId: String? = null,
+    @SerialName("workspace_id") val workspaceId: String? = null
 )
 
 @Serializable

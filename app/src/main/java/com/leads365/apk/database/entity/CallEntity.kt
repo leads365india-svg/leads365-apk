@@ -10,7 +10,8 @@ import androidx.room.PrimaryKey
         Index(value = ["normalizedNumber"]),
         Index(value = ["startTimeEpochMs"]),
         Index(value = ["clientCallId"], unique = true),
-        Index(value = ["workspaceId"])
+        Index(value = ["workspaceId"]),
+        Index(value = ["tenantId"])
     ]
 )
 data class CallEntity(
@@ -39,5 +40,10 @@ data class CallEntity(
     val remoteRecordingUrl: String? = null,
     val isDownloaded: Boolean = false,
     val localFilePath: String? = null,
-    val workspaceId: String? = null
-)
+    val workspaceId: String? = null,
+    val tenantId: String? = null
+) {
+    companion object {
+        const val SYNC_STATUS_QUARANTINED = "QUARANTINED_TENANT_MISMATCH"
+    }
+}

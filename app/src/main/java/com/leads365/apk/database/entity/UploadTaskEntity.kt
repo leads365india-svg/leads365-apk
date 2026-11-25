@@ -9,7 +9,9 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["status"]),
         Index(value = ["callId"]),
-        Index(value = ["updatedAtEpochMs"])
+        Index(value = ["updatedAtEpochMs"]),
+        Index(value = ["tenantId"]),
+        Index(value = ["workspaceId"])
     ]
 )
 data class UploadTaskEntity(
@@ -26,7 +28,9 @@ data class UploadTaskEntity(
     val maxRetries: Int = 3,
     val lastError: String? = null,
     val createdAtEpochMs: Long = System.currentTimeMillis(),
-    val updatedAtEpochMs: Long = System.currentTimeMillis()
+    val updatedAtEpochMs: Long = System.currentTimeMillis(),
+    val tenantId: String? = null,
+    val workspaceId: String? = null
 ) {
     companion object {
         const val STATUS_PENDING = "PENDING"
@@ -51,5 +55,6 @@ data class UploadTaskEntity(
         const val STATE_SKIPPED_NOT_LEAD = "SKIPPED_NOT_LEAD"
         const val STATE_REJECTED_BY_SERVER = "REJECTED_BY_SERVER"
         const val STATE_FAILED_PERMANENT = "FAILED_PERMANENT"
+        const val STATE_TENANT_MISMATCH = "QUARANTINED_TENANT_MISMATCH"
     }
 }

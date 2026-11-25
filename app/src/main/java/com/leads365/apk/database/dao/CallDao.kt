@@ -58,6 +58,17 @@ interface CallDao {
     @Query("SELECT * FROM calls WHERE syncStatus IN ('PENDING', 'DEFERRED_IDENTITY') ORDER BY startTimeEpochMs ASC")
     suspend fun getPendingSyncCalls(): List<CallEntity>
 
+    @Query("SELECT * FROM calls WHERE syncStatus IN ('PENDING', 'DEFERRED_IDENTITY') AND tenantId = :tenantId ORDER BY startTimeEpochMs ASC")
+    suspend fun getPendingSyncCallsForTenant(tenantId: String): List<CallEntity>
+
+    @Query("""
+        UPDATE calls
+        SET tenantId = :tenantId
+        WHERE (tenantId IS NULL OR tenantId = '')
+        AND clientCallId LIKE 'call_' || :tenantId || '_%'
+    """)
+    suspend fun recoverUnambiguousLegacyCallsForTenant(tenantId: String): Int
+
     @Query("""
         SELECT * FROM calls 
         WHERE (isLeadCall = 0 OR leadId IS NULL OR leadId = '') 
@@ -102,6 +113,46 @@ interface CallDao {
 
     @Query("DELETE FROM calls WHERE id = :id")
     suspend fun deleteById(id: String): Int
+
+    @Query("""
+        UPDATE calls
+        SET syncStatus = 'QUARANTINED_TENANT_MISMATCH', syncErrorMessage = :reason
+        WHERE (tenantId IS NULL OR tenantId = '' OR tenantId != :activeTenantId)
+        AND syncStatus IN ('PENDING', 'FAILED', 'DEFERRED_IDENTITY')
+    """)
+    suspend fun quarantineMismatchedCalls(activeTenantId: String, reason: String): Int
+
+    @Query("""
+        UPDATE calls
+        SET syncStatus = 'QUARANTINED_TENANT_MISMATCH', syncErrorMessage = :reason
+        WHERE syncStatus IN ('PENDING', 'FAILED', 'DEFERRED_IDENTITY')
+    """)
+    suspend fun quarantinePendingCallsForLogout(reason: String): Int
+
+    @Query("""
+        UPDATE calls
+        SET syncStatus = CASE WHEN clientCallId LIKE 'local_pending_call_%' THEN 'DEFERRED_IDENTITY' ELSE 'PENDING' END,
+            syncErrorMessage = NULL
+        WHERE syncStatus = 'QUARANTINED_TENANT_MISMATCH' AND tenantId = :tenantId
+    """)
+    suspend fun restoreQuarantinedCallsForTenant(tenantId: String): Int
+
+    @Query("""
+        DELETE FROM calls
+        WHERE syncStatus = 'SYNCED'
+        AND (tenantId IS NULL OR tenantId != :activeTenantId)
+        AND id NOT IN (SELECT callId FROM upload_tasks WHERE callId IS NOT NULL AND status NOT IN ('UPLOADED', 'COMPLETED'))
+        AND clientCallId NOT IN (SELECT callId FROM upload_tasks WHERE callId IS NOT NULL AND status NOT IN ('UPLOADED', 'COMPLETED'))
+    """)
+    suspend fun deleteSyncedCallsNotForTenant(activeTenantId: String): Int
+
+    @Query("""
+        DELETE FROM calls
+        WHERE syncStatus = 'SYNCED'
+        AND id NOT IN (SELECT callId FROM upload_tasks WHERE callId IS NOT NULL AND status NOT IN ('UPLOADED', 'COMPLETED'))
+        AND clientCallId NOT IN (SELECT callId FROM upload_tasks WHERE callId IS NOT NULL AND status NOT IN ('UPLOADED', 'COMPLETED'))
+    """)
+    suspend fun deleteSyncedCalls(): Int
 
     @Query("DELETE FROM calls")
     suspend fun clearAll()

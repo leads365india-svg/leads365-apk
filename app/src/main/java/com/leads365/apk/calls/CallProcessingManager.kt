@@ -206,6 +206,8 @@ class CallProcessingManager(
         }
 
         // Fallback: Automatic Lead Capture for Answered Incoming and Missed/Rejected Calls
+        val currentTenantId = tokenProvider?.getAgencyAccountId()?.trim()?.ifEmpty { null }
+        val currentWorkspaceId = tokenProvider?.getActiveWorkspaceId()?.trim()?.ifEmpty { null }
         val phoneDigits = normalizer.extractLast10Digits(normalizedNumber).ifEmpty {
             normalizedNumber.replace("[^0-9]".toRegex(), "")
         }
@@ -254,7 +256,9 @@ class CallProcessingManager(
                     isDoNotRecord = false,
                     notes = leadNotes,
                     createdAtEpochMs = callEvent.startTimeEpochMs,
-                    updatedAtEpochMs = now
+                    updatedAtEpochMs = now,
+                    workspaceId = currentWorkspaceId,
+                    tenantId = currentTenantId
                 )
                 val saveRes = leadRepository.saveLead(autoLead)
                 if (saveRes is AppResult.Success) {
@@ -344,7 +348,9 @@ class CallProcessingManager(
             simId = callEvent.simId,
             callOutcome = initialOutcome,
             syncStatus = syncStatus,
-            hasRecording = false
+            hasRecording = false,
+            workspaceId = currentWorkspaceId,
+            tenantId = tenantId
         )
 
         val saveResult = callRepository.recordCall(callEntity)

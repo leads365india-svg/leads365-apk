@@ -37,14 +37,70 @@ interface UploadTaskDao {
     @Query("SELECT * FROM upload_tasks WHERE status = :status ORDER BY createdAtEpochMs ASC")
     suspend fun getTasksByStatus(status: String): List<UploadTaskEntity>
 
+    @Query("SELECT * FROM upload_tasks WHERE status = :status AND tenantId = :tenantId ORDER BY createdAtEpochMs ASC")
+    suspend fun getTasksByStatusForTenant(status: String, tenantId: String): List<UploadTaskEntity>
+
     @Query("SELECT * FROM upload_tasks WHERE status IN ('PENDING', 'FILE_FOUND') ORDER BY createdAtEpochMs ASC")
     suspend fun getPendingTasks(): List<UploadTaskEntity>
+
+    @Query("SELECT * FROM upload_tasks WHERE status IN ('PENDING', 'FILE_FOUND') AND tenantId = :tenantId ORDER BY createdAtEpochMs ASC")
+    suspend fun getPendingTasksForTenant(tenantId: String): List<UploadTaskEntity>
+
+    @Query("SELECT * FROM upload_tasks WHERE tenantId = :tenantId ORDER BY updatedAtEpochMs DESC")
+    fun getTasksForTenantFlow(tenantId: String): Flow<List<UploadTaskEntity>>
 
     @Query("SELECT * FROM upload_tasks ORDER BY updatedAtEpochMs DESC")
     fun getAllTasksFlow(): Flow<List<UploadTaskEntity>>
 
     @Query("UPDATE upload_tasks SET status = :status, updatedAtEpochMs = :timestamp, lastError = :error WHERE id = :id")
     suspend fun updateStatus(id: String, status: String, timestamp: Long = System.currentTimeMillis(), error: String? = null)
+
+    @Query("""
+        UPDATE upload_tasks
+        SET status = 'QUARANTINED_TENANT_MISMATCH', lastError = :reason, updatedAtEpochMs = :timestamp
+        WHERE (tenantId IS NULL OR tenantId = '' OR tenantId != :activeTenantId)
+        AND status NOT IN ('UPLOADED', 'COMPLETED', 'FAILED_PERMANENT', 'SKIPPED_DNR', 'SKIPPED_NOT_LEAD', 'REJECTED_BY_SERVER', 'CANCELLED', 'QUARANTINED_TENANT_MISMATCH')
+    """)
+    suspend fun quarantineMismatchedTasks(
+        activeTenantId: String,
+        reason: String,
+        timestamp: Long = System.currentTimeMillis()
+    ): Int
+
+    @Query("""
+        UPDATE upload_tasks
+        SET status = 'QUARANTINED_TENANT_MISMATCH', lastError = :reason, updatedAtEpochMs = :timestamp
+        WHERE status NOT IN ('UPLOADED', 'COMPLETED', 'FAILED_PERMANENT', 'SKIPPED_DNR', 'SKIPPED_NOT_LEAD', 'REJECTED_BY_SERVER', 'CANCELLED', 'QUARANTINED_TENANT_MISMATCH')
+    """)
+    suspend fun quarantineAllNonTerminalTasks(
+        reason: String,
+        timestamp: Long = System.currentTimeMillis()
+    ): Int
+
+    @Query("""
+        UPDATE upload_tasks
+        SET tenantId = :tenantId, updatedAtEpochMs = :timestamp
+        WHERE (tenantId IS NULL OR tenantId = '')
+        AND callId IN (
+            SELECT id FROM calls WHERE tenantId = :tenantId
+            UNION
+            SELECT clientCallId FROM calls WHERE tenantId = :tenantId
+        )
+    """)
+    suspend fun recoverUnambiguousLegacyTasksForTenant(
+        tenantId: String,
+        timestamp: Long = System.currentTimeMillis()
+    ): Int
+
+    @Query("""
+        UPDATE upload_tasks
+        SET status = 'PENDING', lastError = NULL, updatedAtEpochMs = :timestamp
+        WHERE status = 'QUARANTINED_TENANT_MISMATCH' AND tenantId = :tenantId
+    """)
+    suspend fun restoreQuarantinedTasksForTenant(
+        tenantId: String,
+        timestamp: Long = System.currentTimeMillis()
+    ): Int
 
     @Query("UPDATE upload_tasks SET retryCount = retryCount + 1, lastError = :error, updatedAtEpochMs = :timestamp WHERE id = :id")
     suspend fun incrementRetry(id: String, error: String, timestamp: Long = System.currentTimeMillis())

@@ -55,6 +55,9 @@ interface LeadDao {
     @Query("SELECT MAX(updatedAtEpochMs) FROM leads")
     suspend fun getLatestUpdatedAt(): Long?
 
+    @Query("DELETE FROM leads WHERE tenantId IS NULL OR tenantId != :activeTenantId")
+    suspend fun deleteLeadsNotForTenant(activeTenantId: String): Int
+
     @Query("DELETE FROM leads")
     suspend fun clearAll()
 
