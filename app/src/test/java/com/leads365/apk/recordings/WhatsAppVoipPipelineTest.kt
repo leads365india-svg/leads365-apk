@@ -577,6 +577,65 @@ class WhatsAppVoipPipelineTest {
         )
     }
 
+    @Test
+    fun `CallRepositoryImpl clears stale deleted-lead 404 link and retries unlinked with autoCreateLead`() = runBlocking {
+        val staleCallId = "wa_voip_tenant_wa_01_install_wa_01_1732611111000"
+        val callEntity = com.leads365.apk.database.entity.CallEntity(
+            id = staleCallId,
+            clientCallId = staleCallId,
+            normalizedNumber = "+919876543999",
+            rawNumber = "+919876543999",
+            callType = android.provider.CallLog.Calls.INCOMING_TYPE,
+            startTimeEpochMs = 1732611111000L,
+            durationSeconds = 22,
+            isLeadCall = true,
+            leadId = "stale_deleted_lead_id",
+            syncStatus = "PENDING",
+            recordingOrigin = "whatsapp_voip",
+            tenantId = "tenant_wa_01",
+            workspaceId = "ws_wa_01"
+        )
+        database.callDao().insert(callEntity)
+
+        val capturedRequests = mutableListOf<CallReportRequest>()
+        val mockApi = object : CallApiService {
+            override suspend fun reportCall(request: CallReportRequest): CallReportResponse {
+                capturedRequests.add(request)
+                if (capturedRequests.size == 1) {
+                    val body = okhttp3.ResponseBody.create(null, """{"message":"Lead not found"}""")
+                    throw retrofit2.HttpException(retrofit2.Response.error<CallReportResponse>(404, body))
+                }
+                return CallReportResponse(
+                    success = true,
+                    callId = "srv_call_healed_1",
+                    leadId = "srv_lead_recreated_1"
+                )
+            }
+        }
+
+        val repo = CallRepositoryImpl(
+            callDao = database.callDao(),
+            callApiService = mockApi,
+            dispatcher = Dispatchers.Unconfined,
+            tokenProvider = tokenProvider,
+            uploadTaskDao = database.uploadTaskDao(),
+            recordingDiscoveryCoordinator = null,
+            context = context
+        )
+
+        val result = repo.reportCallToBackend(staleCallId)
+        assertTrue("404 stale lead should self-heal cleanly", result is AppResult.Success)
+        assertEquals("Should retry once after 404", 2, capturedRequests.size)
+        assertEquals("stale_deleted_lead_id", capturedRequests[0].leadId)
+        assertEquals("", capturedRequests[1].leadId)
+        assertEquals(true, capturedRequests[1].autoCreateLead)
+
+        val updatedCall = database.callDao().getByClientCallId(staleCallId)
+        assertNotNull(updatedCall)
+        assertEquals("SYNCED", updatedCall!!.syncStatus)
+        assertEquals("srv_lead_recreated_1", updatedCall.leadId)
+    }
+
     private data class ScheduledUpload(
         val taskId: String,
         val fileUri: String,
