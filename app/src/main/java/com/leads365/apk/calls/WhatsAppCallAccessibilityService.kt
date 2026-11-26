@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.CallLog
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -44,7 +45,9 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
     private var callStartTimeMs         = 0L
     private var currentCaller           = ""
     private var currentSourceApp        = ""
+    private var detectedCallType: Int   = CallLog.Calls.OUTGOING_TYPE
     private var heartbeatNoCallUiChecks = 0
+    private var lastTimerNoControlsDiagMs = 0L
 
     private val audioManager: AudioManager? by lazy {
         getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -62,6 +65,8 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         Log.i(TAG, "WhatsApp Accessibility Service connected")
+        resetCallState()
+        WhatsAppAccessibilityHelper.appendDiagEvent(this, "Service connected & ready")
         // Runtime config is loaded from whatsapp_accessibility_config.xml,
         // but set feedback type here defensively.
         serviceInfo = serviceInfo?.also { info ->
@@ -102,6 +107,11 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             // Active window did not show complete call UI (or belonged to another window): inspect all WhatsApp windows
             val windowCandidates = collectTargetWindowRoots(rootsToRecycle)
 
+            if (!isCallActive) {
+                if (activeMatchesPackage) updateDetectedCallDirection(activeRoot!!)
+                windowCandidates.forEach { (node, _) -> updateDetectedCallDirection(node) }
+            }
+
             val controlCandidate =
                 windowCandidates.firstOrNull { (node, _) ->
                     findCallTimerText(node) != null && hasInCallControls(node)
@@ -130,12 +140,14 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.w(TAG, "Accessibility service interrupted")
+        WhatsAppAccessibilityHelper.appendDiagEvent(this, "Service interrupted")
         cancelPendingStop()
         stopHeartbeat()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        WhatsAppAccessibilityHelper.appendDiagEvent(this, "Service destroyed")
         cancelPendingStop()
         stopHeartbeat()
         // If the service is killed while recording, stop VoipRecordingService cleanly
@@ -147,6 +159,9 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
     // ── Core detection logic ────────────────────────────────────────────────
 
     private fun processWindowState(root: AccessibilityNodeInfo, pkg: String) {
+        if (!isCallActive) {
+            updateDetectedCallDirection(root)
+        }
         val hasCallTimer      = findCallTimerText(root) != null
         val hasEndCallBtn     = findEndCallButton(root) != null
         val hasInCallControls = hasEndCallBtn || hasVoipControlMarker(root)
@@ -163,13 +178,18 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
                 currentSourceApp        = pkg
                 currentCaller           = callerText ?: "WhatsApp Contact"
                 cancelPendingStop()
-                Log.i(TAG, "VoIP call detected: caller='$currentCaller' pkg=$pkg")
+                Log.i(TAG, "VoIP call detected: caller='$currentCaller' pkg=$pkg callType=$detectedCallType")
+                WhatsAppAccessibilityHelper.appendDiagEvent(
+                    this,
+                    "Call started: caller=$currentCaller, type=$detectedCallType, pkg=$pkg"
+                )
                 isRecordingStarted = sendStartIntent()
                 if (isRecordingStarted) {
                     startHeartbeat()
                 } else {
                     isCallActive = false
                     activePackage = null
+                    detectedCallType = CallLog.Calls.OUTGOING_TYPE
                 }
             }
 
@@ -192,6 +212,14 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
                     TAG,
                     "Timer seen without controls (pkg=$pkg); clickable nodes: ${summarizeClickableNodes(root)}"
                 )
+                val now = System.currentTimeMillis()
+                if (now - lastTimerNoControlsDiagMs >= TIMER_NO_CONTROLS_DIAG_COOLDOWN_MS) {
+                    lastTimerNoControlsDiagMs = now
+                    WhatsAppAccessibilityHelper.appendDiagEvent(
+                        this,
+                        "Timer seen, controls=false (pkg=$pkg)"
+                    )
+                }
             }
         }
     }
@@ -203,6 +231,7 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             != PackageManager.PERMISSION_GRANTED
         ) {
             Log.w(TAG, "RECORD_AUDIO not granted — skipping recording start")
+            WhatsAppAccessibilityHelper.appendDiagEvent(this, "Start failed: RECORD_AUDIO permission missing")
             return false
         }
         val intent = Intent(this, VoipRecordingService::class.java).apply {
@@ -210,20 +239,26 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             putExtra(VoipRecordingService.EXTRA_CALLER,      currentCaller)
             putExtra(VoipRecordingService.EXTRA_SOURCE_APP,  currentSourceApp)
             putExtra(VoipRecordingService.EXTRA_START_TIME,  callStartTimeMs)
+            putExtra(VoipRecordingService.EXTRA_CALL_TYPE,   detectedCallType)
         }
         return try {
             startForegroundService(intent)
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start VoipRecordingService", e)
+            WhatsAppAccessibilityHelper.appendDiagEvent(this, "Start failed: ${e.message}")
             false
         }
     }
 
     private fun sendStopIntent(durationSec: Int) {
         val wasRecording = isRecordingStarted
+        val stopCallType = detectedCallType
         resetCallState()
-        if (!wasRecording || !VoipRecordingService.isRunning) return
+        if (!wasRecording) return
+
+        WhatsAppAccessibilityHelper.appendDiagEvent(this, "Call stopped: duration=${durationSec}s")
+        if (!VoipRecordingService.isRunning) return
 
         val intent = Intent(this, VoipRecordingService::class.java).apply {
             action = VoipRecordingService.ACTION_STOP
@@ -231,6 +266,7 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
             putExtra(VoipRecordingService.EXTRA_SOURCE_APP,   currentSourceApp)
             putExtra(VoipRecordingService.EXTRA_START_TIME,   callStartTimeMs)
             putExtra(VoipRecordingService.EXTRA_DURATION_SEC, durationSec)
+            putExtra(VoipRecordingService.EXTRA_CALL_TYPE,    stopCallType)
         }
         try {
             startService(intent)
@@ -255,6 +291,22 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
         serviceConfirmedRunning = false
         heartbeatNoCallUiChecks = 0
         activePackage = null
+        detectedCallType = CallLog.Calls.OUTGOING_TYPE
+    }
+
+    private fun updateDetectedCallDirection(root: AccessibilityNodeInfo) {
+        if (isCallActive) return
+        when (detectCallDirectionInTree(root)) {
+            CallLog.Calls.INCOMING_TYPE -> {
+                if (detectedCallType != CallLog.Calls.INCOMING_TYPE) {
+                    Log.i(TAG, "Detected pre-connect INCOMING WhatsApp call cues")
+                }
+                detectedCallType = CallLog.Calls.INCOMING_TYPE
+            }
+            CallLog.Calls.OUTGOING_TYPE -> {
+                detectedCallType = CallLog.Calls.OUTGOING_TYPE
+            }
+        }
     }
 
     // ── Heartbeat (2 s) for screen-lock / app-exit safety ───────────────────
@@ -494,6 +546,9 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
         /** Consecutive 2s checks with screen ON, non-comm audio, and no call UI before stopping (6s). */
         private const val HEARTBEAT_REQUIRED_NO_UI_CHECKS = 3
 
+        /** Cooldown for persisting "Timer seen, controls=false" diagnostic events. */
+        private const val TIMER_NO_CONTROLS_DIAG_COOLDOWN_MS = 5_000L
+
         /** Matches call timer strings like "0:42", "1:05", "12:34", "1:23:45". */
         private val TIMER_REGEX = Regex("""^\d{1,2}:\d{2}(:\d{2})?$""")
 
@@ -517,6 +572,61 @@ class WhatsAppCallAccessibilityService : AccessibilityService() {
         private val IN_CALL_CONTROL_TOKENS = listOf(
             "speaker", "bluetooth", "audio_route", "call_controls", "voip_call"
         )
+
+        /** Case-insensitive incoming call banner/prompt substrings across WhatsApp & W4B builds. */
+        private val INCOMING_CALL_PHRASES = listOf(
+            "incoming voice call",
+            "incoming video call",
+            "whatsapp voice call",
+            "whatsapp video call",
+            "whatsapp business voice call",
+            "whatsapp business video call",
+            "swipe up to accept"
+        )
+
+        private val INCOMING_ACTION_REGEX = Regex("""\b(answer|accept|decline)\b""", RegexOption.IGNORE_CASE)
+        private val OUTGOING_CUE_REGEX = Regex("""\b(calling|ringing)\b""", RegexOption.IGNORE_CASE)
+
+        internal fun classifyCallDirectionText(
+            text: CharSequence?,
+            contentDesc: CharSequence?
+        ): Int? {
+            val candidates = listOfNotNull(
+                text?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+                contentDesc?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            )
+            var matchedOutgoing = false
+            for (raw in candidates) {
+                val lower = raw.lowercase()
+                if (INCOMING_CALL_PHRASES.any { lower.contains(it) }) {
+                    return CallLog.Calls.INCOMING_TYPE
+                }
+                if (lower != "no answer" && INCOMING_ACTION_REGEX.containsMatchIn(lower)) {
+                    return CallLog.Calls.INCOMING_TYPE
+                }
+                if (OUTGOING_CUE_REGEX.containsMatchIn(lower)) {
+                    matchedOutgoing = true
+                }
+            }
+            return if (matchedOutgoing) CallLog.Calls.OUTGOING_TYPE else null
+        }
+
+        internal fun detectCallDirectionInTree(root: AccessibilityNodeInfo): Int? {
+            var sawOutgoing = false
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(root)
+            while (queue.isNotEmpty()) {
+                val node = queue.removeFirst()
+                when (classifyCallDirectionText(node.text, node.contentDescription)) {
+                    CallLog.Calls.INCOMING_TYPE -> return CallLog.Calls.INCOMING_TYPE
+                    CallLog.Calls.OUTGOING_TYPE -> sawOutgoing = true
+                }
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it) }
+                }
+            }
+            return if (sawOutgoing) CallLog.Calls.OUTGOING_TYPE else null
+        }
 
         internal fun findEndCallButtonInTree(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
             bfsFindWithParentClickable(root) { node, parentClickable ->

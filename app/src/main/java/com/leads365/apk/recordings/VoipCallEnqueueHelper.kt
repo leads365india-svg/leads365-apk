@@ -62,7 +62,8 @@ class VoipCallEnqueueHelper @Inject constructor(
         sourceApp: String,
         file: File,
         startTimeMs: Long,
-        durationSec: Int
+        durationSec: Int,
+        callType: Int = CallLog.Calls.OUTGOING_TYPE
     ): Boolean = withContext(Dispatchers.IO) {
 
         // ── 1. File sanity check ─────────────────────────────────────────────
@@ -159,7 +160,7 @@ class VoipCallEnqueueHelper @Inject constructor(
             clientCallId          = clientCallId,
             normalizedNumber      = resolvedPhone ?: trimmedCaller,
             rawNumber             = trimmedCaller,
-            callType              = CallLog.Calls.OUTGOING_TYPE,
+            callType              = callType,
             startTimeEpochMs      = startTimeMs,
             durationSeconds       = durationSec.coerceAtLeast(1).toLong(),
             isLeadCall            = matchedLead != null,

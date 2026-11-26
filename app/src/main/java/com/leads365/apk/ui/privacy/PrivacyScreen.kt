@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -427,6 +429,10 @@ private fun WhatsAppVoipSetupCard() {
     var wasPreviouslyEnabled by remember {
         mutableStateOf(WhatsAppAccessibilityHelper.wasWhatsAppPreviouslyEnabled(context))
     }
+    var showDiagLog by remember { mutableStateOf(false) }
+    var diagEvents by remember {
+        mutableStateOf(WhatsAppAccessibilityHelper.getDiagEvents(context))
+    }
 
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -440,6 +446,7 @@ private fun WhatsAppVoipSetupCard() {
                 hasRecordAudio = WhatsAppAccessibilityHelper.hasRecordAudioPermission(context)
                 isAccessibilityEnabled = WhatsAppAccessibilityHelper.isWhatsAppAccessibilityEnabled(context)
                 wasPreviouslyEnabled = WhatsAppAccessibilityHelper.wasWhatsAppPreviouslyEnabled(context)
+                diagEvents = WhatsAppAccessibilityHelper.getDiagEvents(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -605,6 +612,76 @@ private fun WhatsAppVoipSetupCard() {
                         fontSize = 11.sp,
                         color = TextSecondaryLight,
                         lineHeight = 15.sp
+                    )
+                }
+            }
+
+            HorizontalDivider(thickness = 1.dp, color = Slate200)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        showDiagLog = !showDiagLog
+                        if (showDiagLog) {
+                            diagEvents = WhatsAppAccessibilityHelper.getDiagEvents(context)
+                        }
+                    }
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (showDiagLog) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Navy900,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Recent Activity Log",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Navy900
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        diagEvents = WhatsAppAccessibilityHelper.getDiagEvents(context)
+                        if (!showDiagLog) showDiagLog = true
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh activity log",
+                        tint = Navy900,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = showDiagLog) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Slate100,
+                    border = BorderStroke(1.dp, Slate200),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (diagEvents.isEmpty()) {
+                            "No recent WhatsApp activity logged yet."
+                        } else {
+                            diagEvents.asReversed().joinToString("\n")
+                        },
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                        color = Navy900,
+                        modifier = Modifier.padding(10.dp)
                     )
                 }
             }

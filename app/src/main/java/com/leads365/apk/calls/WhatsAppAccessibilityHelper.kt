@@ -9,6 +9,9 @@ import android.net.Uri
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.core.content.ContextCompat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Helper utilities for checking and opening opt-in WhatsApp VoIP call
@@ -19,6 +22,9 @@ object WhatsAppAccessibilityHelper {
 
     private const val PREFS_NAME = "com.leads365.apk.preferences"
     private const val KEY_WHATSAPP_A11Y_EVER_ENABLED = "pref_whatsapp_a11y_ever_enabled"
+    private const val KEY_WHATSAPP_DIAG_LOG = "pref_whatsapp_diag_log"
+    private const val MAX_DIAG_EVENTS = 12
+    private val diagLock = Any()
 
     /**
      * Safely checks whether [WhatsAppCallAccessibilityService] is enabled in
@@ -120,6 +126,55 @@ object WhatsAppAccessibilityHelper {
                 .putBoolean(KEY_WHATSAPP_A11Y_EVER_ENABLED, true)
                 .apply()
         } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * Appends a timestamped (`HH:mm:ss`) WhatsApp diagnostic event, keeping the most recent 12 entries.
+     */
+    fun appendDiagEvent(context: Context, message: String) {
+        synchronized(diagLock) {
+            try {
+                val timestamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                val cleanMessage = message.replace(Regex("[\\r\\n]+"), " ").trim()
+                val entry = "$timestamp $cleanMessage"
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val existing = prefs.getString(KEY_WHATSAPP_DIAG_LOG, "")
+                    .orEmpty()
+                    .split('\n')
+                    .filter { it.isNotBlank() }
+                    .toMutableList()
+                existing.add(entry)
+                val trimmed = if (existing.size > MAX_DIAG_EVENTS) {
+                    existing.takeLast(MAX_DIAG_EVENTS)
+                } else {
+                    existing
+                }
+                prefs.edit()
+                    .putString(KEY_WHATSAPP_DIAG_LOG, trimmed.joinToString("\n"))
+                    .apply()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    /**
+     * Returns the stored WhatsApp diagnostic log entries (up to the last 12).
+     */
+    fun getDiagEvents(context: Context): List<String> {
+        synchronized(diagLock) {
+            return try {
+                val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getString(KEY_WHATSAPP_DIAG_LOG, "")
+                    .orEmpty()
+                if (raw.isBlank()) {
+                    emptyList()
+                } else {
+                    raw.split('\n').filter { it.isNotBlank() }
+                }
+            } catch (_: Throwable) {
+                emptyList()
+            }
         }
     }
 }

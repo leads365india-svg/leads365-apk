@@ -471,6 +471,8 @@ fun CallRecordCard(
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF047857),
+                                        maxLines = 1,
+                                        softWrap = false,
                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                     )
                                 }

@@ -493,6 +493,90 @@ class WhatsAppVoipPipelineTest {
         }
     }
 
+    @Test
+    fun `VoipCallEnqueueHelper persists INCOMING_TYPE and WhatsAppCallAccessibilityService classifies incoming vs outgoing cues`() = runBlocking {
+        // 1. Accessibility direction cue classification
+        assertEquals(
+            android.provider.CallLog.Calls.INCOMING_TYPE,
+            WhatsAppCallAccessibilityService.classifyCallDirectionText("Incoming voice call", null)
+        )
+        assertEquals(
+            android.provider.CallLog.Calls.INCOMING_TYPE,
+            WhatsAppCallAccessibilityService.classifyCallDirectionText(null, "WhatsApp Business voice call")
+        )
+        assertEquals(
+            android.provider.CallLog.Calls.INCOMING_TYPE,
+            WhatsAppCallAccessibilityService.classifyCallDirectionText("Swipe up to accept", null)
+        )
+        assertEquals(
+            android.provider.CallLog.Calls.INCOMING_TYPE,
+            WhatsAppCallAccessibilityService.classifyCallDirectionText("Answer", "Decline")
+        )
+        assertEquals(
+            android.provider.CallLog.Calls.OUTGOING_TYPE,
+            WhatsAppCallAccessibilityService.classifyCallDirectionText("Calling…", null)
+        )
+        assertEquals(
+            android.provider.CallLog.Calls.OUTGOING_TYPE,
+            WhatsAppCallAccessibilityService.classifyCallDirectionText("Ringing", null)
+        )
+
+        val incomingTreeNode = AccessibilityNodeInfo.obtain().apply {
+            text = "WhatsApp Business voice call"
+            contentDescription = "Ringing"
+        }
+        try {
+            assertEquals(
+                "Incoming cues must win over generic Ringing cue",
+                android.provider.CallLog.Calls.INCOMING_TYPE,
+                WhatsAppCallAccessibilityService.detectCallDirectionInTree(incomingTreeNode)
+            )
+        } finally {
+            incomingTreeNode.recycle()
+        }
+
+        // 2. VoipCallEnqueueHelper persists INCOMING_TYPE when detected
+        val audioFile = File(voipDir, "WA_incoming_1732600000000.m4a").apply {
+            writeBytes(ByteArray(4096) { 0x55 })
+        }
+        val enqueued = enqueueHelper.enqueueVoipRecording(
+            callerIdentifier = "+919876500111",
+            sourceApp = "com.whatsapp.w4b",
+            file = audioFile,
+            startTimeMs = 1732600000000L,
+            durationSec = 32,
+            callType = android.provider.CallLog.Calls.INCOMING_TYPE
+        )
+        assertTrue("Incoming WhatsApp call must enqueue cleanly", enqueued)
+
+        val expectedCallId = "wa_voip_tenant_wa_01_install_wa_01_1732600000000"
+        val savedIncoming = database.callDao().getByClientCallId(expectedCallId)
+        assertNotNull(savedIncoming)
+        assertEquals(android.provider.CallLog.Calls.INCOMING_TYPE, savedIncoming!!.callType)
+        assertEquals("whatsapp_voip", savedIncoming.recordingOrigin)
+    }
+
+    @Test
+    fun `WhatsAppAccessibilityHelper retains last 12 timestamped diagnostic events`() {
+        context.getSharedPreferences("com.leads365.apk.preferences", Context.MODE_PRIVATE)
+            .edit()
+            .remove("pref_whatsapp_diag_log")
+            .commit()
+
+        for (i in 1..15) {
+            com.leads365.apk.calls.WhatsAppAccessibilityHelper.appendDiagEvent(context, "Event #$i")
+        }
+
+        val events = com.leads365.apk.calls.WhatsAppAccessibilityHelper.getDiagEvents(context)
+        assertEquals("Only last 12 diagnostic events must be retained", 12, events.size)
+        assertTrue(events.first().endsWith("Event #4"))
+        assertTrue(events.last().endsWith("Event #15"))
+        assertTrue(
+            "Diagnostic entries must begin with HH:mm:ss timestamp",
+            Regex("""^\d{2}:\d{2}:\d{2} Event #\d+$""").matches(events.last())
+        )
+    }
+
     private data class ScheduledUpload(
         val taskId: String,
         val fileUri: String,

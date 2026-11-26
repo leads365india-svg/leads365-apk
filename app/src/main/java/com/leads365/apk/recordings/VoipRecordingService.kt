@@ -13,9 +13,11 @@ import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
+import android.provider.CallLog
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.leads365.apk.calls.WhatsAppAccessibilityHelper
 import com.leads365.apk.data.repository.PolicyRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -57,6 +59,7 @@ class VoipRecordingService : Service() {
     private var callerIdentifier: String = ""
     private var sourceApp: String = ""
     private var startTimeMs: Long = 0L
+    private var callType: Int = CallLog.Calls.OUTGOING_TYPE
     private var isForegroundActive: Boolean = false
     @Volatile
     private var isRecording: Boolean = false
@@ -64,6 +67,7 @@ class VoipRecordingService : Service() {
     private var nonCommChecks: Int = 0
     private var activeSourceIndex: Int = -1
     private var recordingGeneration: Long = 0L
+    private var lastRecorderError: Exception? = null
     private var watchdogJob: Job? = null
     private var silenceCheckJob: Job? = null
     private val stopLock = Any()
@@ -98,6 +102,7 @@ class VoipRecordingService : Service() {
             isForegroundActive = false
             isRunning = false
             activeSourceIndex = -1
+            callType = CallLog.Calls.OUTGOING_TYPE
             releaseRecorder()
         }
         serviceScope.cancel()
@@ -125,6 +130,7 @@ class VoipRecordingService : Service() {
         callerIdentifier = intent.getStringExtra(EXTRA_CALLER)      ?: "WhatsApp Contact"
         sourceApp        = intent.getStringExtra(EXTRA_SOURCE_APP)  ?: "com.whatsapp"
         startTimeMs      = intent.getLongExtra(EXTRA_START_TIME, System.currentTimeMillis())
+        callType         = intent.getIntExtra(EXTRA_CALL_TYPE, CallLog.Calls.OUTGOING_TYPE)
 
         // Start foreground BEFORE policy check so startForegroundService contract is always fulfilled
         ensureNotificationChannel()
@@ -172,6 +178,10 @@ class VoipRecordingService : Service() {
                 val startedIdx = tryStartRecorderFromIndex(recorder, outFile, startIndex = 0, sessionGeneration = generation)
                 if (startedIdx == null) {
                     Log.e(TAG, "All audio sources failed (${AUDIO_SOURCE_PRIORITY.joinToString()})")
+                    WhatsAppAccessibilityHelper.appendDiagEvent(
+                        this,
+                        "Recorder failed: ${lastRecorderError?.message ?: "unknown error"}"
+                    )
                     runCatching { recorder.release() }
                     outputFile = null
                     activeSourceIndex = -1
@@ -210,6 +220,7 @@ class VoipRecordingService : Service() {
         startIndex: Int,
         sessionGeneration: Long
     ): Int? {
+        lastRecorderError = null
         for (idx in startIndex until AUDIO_SOURCE_PRIORITY.size) {
             val audioSource = AUDIO_SOURCE_PRIORITY[idx]
             try {
@@ -247,10 +258,13 @@ class VoipRecordingService : Service() {
                 // Reset baseline maxAmplitude latch right after start
                 runCatching { recorder.maxAmplitude }
                 Log.i(TAG, "Recording started (source=$audioSource, idx=$idx) → ${outFile.name}")
+                WhatsAppAccessibilityHelper.appendDiagEvent(this, "Recorder started (source=$audioSource)")
                 return idx
             } catch (e: IOException) {
+                lastRecorderError = e
                 Log.w(TAG, "AudioSource $audioSource IOException at ${AUDIO_SAMPLING_RATE}Hz/${AUDIO_ENCODING_BITRATE}bps", e)
             } catch (e: RuntimeException) {
+                lastRecorderError = e
                 Log.w(TAG, "AudioSource $audioSource RuntimeException at ${AUDIO_SAMPLING_RATE}Hz/${AUDIO_ENCODING_BITRATE}bps", e)
             }
         }
@@ -305,6 +319,10 @@ class VoipRecordingService : Service() {
                 scheduleSilenceCheck(switchedIdx, generation)
             } else {
                 Log.e(TAG, "All fallback audio sources failed after silent source=$currentSource")
+                WhatsAppAccessibilityHelper.appendDiagEvent(
+                    this,
+                    "Recorder failed: ${lastRecorderError?.message ?: "fallback failed"}"
+                )
                 runCatching { nextRecorder.release() }
                 isRecording = false
                 isRunning = false
@@ -379,6 +397,9 @@ class VoipRecordingService : Service() {
         if (!stopCaller.isNullOrBlank() && !stopCaller.equals("WhatsApp Contact", ignoreCase = true)) {
             callerIdentifier = stopCaller
         }
+        if (intent.hasExtra(EXTRA_CALL_TYPE)) {
+            callType = intent.getIntExtra(EXTRA_CALL_TYPE, callType)
+        }
         val durationSec = intent.getIntExtra(EXTRA_DURATION_SEC, 0)
         stopCaptureAndEnqueue(durationSec)
     }
@@ -388,6 +409,7 @@ class VoipRecordingService : Service() {
         val capturedCaller: String
         val capturedSourceApp: String
         val capturedStartTime: Long
+        val capturedCallType: Int
 
         synchronized(stopLock) {
             watchdogJob?.cancel()
@@ -411,6 +433,8 @@ class VoipRecordingService : Service() {
             capturedCaller = callerIdentifier
             capturedSourceApp = sourceApp
             capturedStartTime = startTimeMs
+            capturedCallType = callType
+            callType = CallLog.Calls.OUTGOING_TYPE
             outputFile = null
             releaseRecorder()
         }
@@ -427,16 +451,30 @@ class VoipRecordingService : Service() {
         serviceScope.launch {
             try {
                 if (capturedFile != null) {
-                    voipCallEnqueueHelper.enqueueVoipRecording(
+                    val fileBytes = capturedFile.length()
+                    val enqueued = voipCallEnqueueHelper.enqueueVoipRecording(
                         callerIdentifier = capturedCaller,
                         sourceApp        = capturedSourceApp,
                         file             = capturedFile,
                         startTimeMs      = capturedStartTime,
-                        durationSec      = resolvedDurationSec
+                        durationSec      = resolvedDurationSec,
+                        callType         = capturedCallType
+                    )
+                    WhatsAppAccessibilityHelper.appendDiagEvent(
+                        this@VoipRecordingService,
+                        if (enqueued) {
+                            "Recording enqueued ($fileBytes bytes)"
+                        } else {
+                            "Recording discarded (too short/paused/DNR)"
+                        }
                     )
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "enqueueVoipRecording failed", e)
+                WhatsAppAccessibilityHelper.appendDiagEvent(
+                    this@VoipRecordingService,
+                    "Recorder failed: ${e.message}"
+                )
             } finally {
                 withContext(Dispatchers.Main) {
                     stopForegroundAndStopSelf()
@@ -504,6 +542,7 @@ class VoipRecordingService : Service() {
         const val EXTRA_SOURCE_APP    = "extra_source_app"
         const val EXTRA_START_TIME    = "extra_start_time_ms"
         const val EXTRA_DURATION_SEC  = "extra_duration_sec"
+        const val EXTRA_CALL_TYPE     = "extra_call_type"
         const val CHANNEL_ID              = "leads365_voip_capture"
         const val NOTIFICATION_ID         = 9002
         const val WATCHDOG_POLL_INTERVAL_MS = 2_000L
